@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minha Biblioteca de Jogos</title>
+  <!-- Carrega o Tailwind CSS para estilização -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Carrega as bibliotecas do React -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Carrega o Babel para traduzir JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Carrega o Axios para fazer requisições HTTP -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #1a202c;
+    }
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 50;
+    }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+  </style>
+</head>
+<body>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // URL da nossa API backend - AGORA USANDO O IP DA REDE
+    const API_URL = 'http://192.168.18.161:3000/jogos';
+
+    // --- Componentes ---
+
+    // Componente para o Cartão do Jogo
+    function GameCard({ jogo, onEdit, onDelete }) {
+      const formatarGameplay = (minutos) => {
+        if (minutos === null || minutos === undefined) return 'N/A';
+        const horas = Math.floor(minutos / 60);
+        const mins = minutos % 60;
+        return `${horas}h ${mins}m`;
+      };
+
+      return (
+        <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col justify-between transform hover:scale-105 transition-transform duration-300">
+          <div>
+            <img 
+              src={jogo.capa} 
+              alt={`Capa do jogo ${jogo.titulo}`} 
+              className="w-full h-48 object-cover"
+              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/400x600/1a202c/ffffff?text=Capa+N/D'; }}
+            />
+            <div className="p-4">
+              <h2 className="text-lg font-bold text-white truncate" title={jogo.titulo}>{jogo.titulo}</h2>
+              <p className="text-sm text-gray-400 mt-1">{jogo.plataforma}</p>
+              <div className="flex justify-between items-center mt-4">
+                <span className="text-xs text-gray-500">{formatarGameplay(jogo.gameplay_minutos)}</span>
+                <span className={`text-sm font-bold px-2 py-1 rounded ${jogo.metacritic >= 75 ? 'bg-green-500 text-white' : jogo.metacritic > 50 ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
+                  {jogo.metacritic || 'N/A'}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="p-2 bg-gray-900 flex justify-end gap-2">
+            <button onClick={() => onEdit(jogo)} className="text-gray-400 hover:text-white transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+            </button>
+            <button onClick={() => onDelete(jogo)} className="text-gray-400 hover:text-red-500 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Componente para o Formulário (Modal)
+    function GameFormModal({ jogo, onSave, onCancel }) {
+      const [formData, setFormData] = useState({
+        titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: ''
+      });
+
+      useEffect(() => {
+        if (jogo) {
+          // Se estamos editando, preenchemos o formulário
+          const lancamentoFormatado = jogo.lancamento ? new Date(jogo.lancamento).toISOString().split('T')[0] : '';
+          // Converte minutos para horas para exibir no formulário
+          const gameplayEmHoras = jogo.gameplay_minutos ? Math.round(jogo.gameplay_minutos / 60) : '';
+          setFormData({ ...jogo, lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras });
+        } else {
+          // Se for um novo jogo, o formulário começa em branco
+          setFormData({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '' });
+        }
+      }, [jogo]);
+
+      const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+      };
+
+      return (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-lg m-4">
+            <form onSubmit={handleSubmit}>
+              <div className="p-6">
+                <h2 className="text-2xl font-bold mb-6">{jogo ? 'Editar Jogo' : 'Adicionar Novo Jogo'}</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5">
+                  <div className="md:col-span-2">
+                    <label htmlFor="titulo" className="block text-sm font-medium text-gray-300 mb-1">Título</label>
+                    <input id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="plataforma" className="block text-sm font-medium text-gray-300 mb-1">Plataforma</label>
+                    <input id="plataforma" name="plataforma" value={formData.plataforma} onChange={handleChange} placeholder="Ex: Steam" required className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                   <div>
+                    <label htmlFor="lancamento" className="block text-sm font-medium text-gray-300 mb-1">Data de Lançamento</label>
+                    <input id="lancamento" name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="gameplay_horas" className="block text-sm font-medium text-gray-300 mb-1">Gameplay (Horas)</label>
+                    <input id="gameplay_horas" name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" placeholder="Ex: 120" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="metacritic" className="block text-sm font-medium text-gray-300 mb-1">Metacritic</label>
+                    <input id="metacritic" name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" placeholder="0-100" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label htmlFor="capa" className="block text-sm font-medium text-gray-300 mb-1">URL da Capa</label>
+                    <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-900 p-4 flex justify-end gap-4 rounded-b-lg">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md font-semibold transition-colors">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Salvar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+    
+    // --- Componente Principal ---
+    function App() {
+      const [jogos, setJogos] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingGame, setEditingGame] = useState(null);
+
+      const [filters, setFilters] = useState({
+        titulo: '',
+        plataforma: '',
+        gameplay_min: '',
+        gameplay_max: '',
+        metacritic_min: '',
+        metacritic_max: ''
+      });
+
+      const fetchJogos = useCallback(async () => {
+        try {
+          setLoading(true);
+          const params = new URLSearchParams();
+          for (const key in filters) {
+            if (filters[key]) {
+              // Converte horas para minutos para o filtro de gameplay
+              if (key === 'gameplay_min' || key === 'gameplay_max') {
+                  params.append(key, filters[key] * 60);
+              } else {
+                  params.append(key, filters[key]);
+              }
+            }
+          }
+          const response = await axios.get(`${API_URL}?${params.toString()}`);
+          setJogos(response.data);
+          setError(null);
+        } catch (err) {
+          console.error("Erro ao buscar jogos:", err);
+          setError("Não foi possível carregar os jogos. O backend está rodando?");
+        } finally {
+          setLoading(false);
+        }
+      }, [filters]);
+
+      useEffect(() => {
+        const handler = setTimeout(() => {
+            fetchJogos();
+        }, 500); // Debounce de 500ms
+        return () => {
+            clearTimeout(handler);
+        };
+      }, [filters, fetchJogos]);
+
+      const handleFilterChange = (e) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+      };
+
+      const handleOpenModal = (jogo = null) => {
+        setEditingGame(jogo);
+        setIsModalOpen(true);
+      };
+
+      const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingGame(null);
+      };
+
+      const handleSaveGame = async (gameData) => {
+        // Converte horas para minutos e strings vazias para null antes de enviar
+        const dataToSend = {
+          ...gameData,
+          gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10) * 60 : null,
+          metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null,
+        };
+        // Remove a propriedade temporária 'gameplay_horas' para não enviá-la ao backend
+        delete dataToSend.gameplay_horas;
+        
+        try {
+          if (editingGame) {
+            // Atualizar (PUT)
+            await axios.put(`${API_URL}/${editingGame.id}`, dataToSend);
+          } else {
+            // Criar (POST)
+            await axios.post(API_URL, dataToSend);
+          }
+          handleCloseModal();
+          fetchJogos(); // Re-busca os jogos para atualizar a lista
+        } catch (err) {
+          console.error("Erro ao salvar o jogo:", err);
+          alert("Falha ao salvar o jogo. Verifique o console para mais detalhes.");
+        }
+      };
+
+      const handleDeleteGame = async (jogo) => {
+        if (window.confirm(`Tem certeza que deseja excluir "${jogo.titulo}"?`)) {
+          try {
+            await axios.delete(`${API_URL}/${jogo.id}`);
+            fetchJogos(); // Re-busca os jogos
+          } catch (err) {
+            console.error("Erro ao excluir o jogo:", err);
+            alert("Falha ao excluir o jogo.");
+          }
+        }
+      };
+
+      if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
+
+      return (
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+          <header className="flex flex-col sm:flex-row justify-between items-center mb-8">
+            <div className="text-center sm:text-left mb-4 sm:mb-0">
+              <h1 className="text-4xl font-bold text-white">Minha Biblioteca de Jogos</h1>
+              <p className="text-gray-400 mt-2">Sua coleção pessoal em um só lugar.</p>
+            </div>
+            <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">
+              Adicionar Novo Jogo
+            </button>
+          </header>
+
+          <div className="bg-gray-800 p-4 rounded-lg mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input name="plataforma" value={filters.plataforma} onChange={handleFilterChange} placeholder="Filtrar por Plataforma..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="flex items-center gap-2">
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Gameplay Min (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-gray-400">-</span>
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Max (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Metacritic Min" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-gray-400">-</span>
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Max" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <h1 className="text-white text-2xl text-center mt-10">Carregando jogos...</h1>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+              {jogos.length > 0 ? (
+                jogos.map(jogo => (
+                  <GameCard key={jogo.id} jogo={jogo} onEdit={handleOpenModal} onDelete={handleDeleteGame} />
+                ))
+              ) : (
+                <p className="text-gray-400 col-span-full text-center">Nenhum jogo encontrado com os filtros aplicados.</p>
+              )}
+            </div>
+          )}
+
+          {isModalOpen && (
+            <GameFormModal 
+              jogo={editingGame} 
+              onSave={handleSaveGame} 
+              onCancel={handleCloseModal} 
+            />
+          )}
+        </div>
+      );
+    }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
+  </script>
+
+</body>
+</html>
