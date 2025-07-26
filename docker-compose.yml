@@ -1,0 +1,59 @@
+# Definição dos nossos serviços (contêineres)
+services:
+  # Serviço do Banco de Dados
+  db:
+    image: postgres:14-alpine
+    container_name: gamelib-db
+    restart: unless-stopped
+    ports: 
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: gamelib_db
+    volumes:
+      # Mapeia uma pasta no seu servidor para guardar os dados do banco
+      - ./postgres-data:/var/lib/postgresql/data
+      # Monta o script de inicialização para ser executado na primeira vez
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - gamelib-network
+
+  # Serviço do Backend
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: gamelib-backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_USER: admin
+      DB_PASSWORD: admin
+      DB_PORT: 5432
+      DB_DATABASE: gamelib_db
+    ports:
+      - "3000:3000"
+    networks:
+      - gamelib-network
+    depends_on:
+      - db
+
+  # Serviço do Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    container_name: gamelib-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    networks:
+      - gamelib-network
+
+# Define a rede personalizada para que os contêineres possam se comunicar
+networks:
+  gamelib-network:
+    driver: bridge
