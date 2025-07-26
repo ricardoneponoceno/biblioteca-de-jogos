@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Laricks Biblioteca de Jogos</title>
+  <title>Minha Biblioteca de Jogos</title>
+  
+  <!-- Ícone da Aba do Navegador (Favicon) -->
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/000000/game-controller.png">
+
   <!-- Carrega o Tailwind CSS para estilização -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Carrega as bibliotecas do React -->
@@ -40,8 +44,11 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
 
-    // URL da nossa API backend - AGORA USANDO O IP DA REDE
+    // URL da nossa API backend
     const API_URL = 'http://192.168.18.183:3000/jogos';
+
+    // Lista de plataformas para o filtro. Adicione mais aqui!
+    const PLATAFORMAS = ['EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Steam', 'GOG', 'EA App'];
 
     // --- Componentes ---
 
@@ -267,20 +274,37 @@
 
       return (
         <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-          <header className="flex flex-col sm:flex-row justify-between items-center mb-8">
-            <div className="text-center sm:text-left mb-4 sm:mb-0">
-              <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
-              <p className="text-gray-400 mt-2">Nossa coleção pessoal compilada.</p>
+          <header className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+            <div className="text-center sm:text-left">
+              <h1 className="text-4xl font-bold text-white">Minha Biblioteca de Jogos</h1>
+              <p className="text-gray-400 mt-2">
+                Atualmente com <span className="font-bold text-cyan-400">{jogos.length}</span> jogos na sua coleção.
+              </p>
             </div>
-            <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">
-              Adicionar Jogo
+            <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">
+              Adicionar Novo Jogo
             </button>
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <input name="plataforma" value={filters.plataforma} onChange={handleFilterChange} placeholder="Filtrar por Plataforma..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              
+              {/* Campo de Plataforma alterado para um menu suspenso */}
+              <select 
+                name="plataforma" 
+                value={filters.plataforma} 
+                onChange={handleFilterChange} 
+                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todas as Plataformas</option>
+                {PLATAFORMAS.map(plataforma => (
+                  <option key={plataforma} value={plataforma}>
+                    {plataforma}
+                  </option>
+                ))}
+              </select>
+
               <div className="flex items-center gap-2">
                 <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Gameplay Min (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-gray-400">-</span>
