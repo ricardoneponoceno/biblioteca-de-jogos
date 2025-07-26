@@ -7,3 +7,5 @@
 # Arquivos de log e sistema
 npm-debug.log
 .DS_Store
+
+/postgres-data/
