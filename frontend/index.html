@@ -3,19 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minha Biblioteca de Jogos</title>
+  <title>Laricks Biblioteca de Jogos</title>
   
-  <!-- Ícone da Aba do Navegador (Favicon) -->
-  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/000000/game-controller.png">
-
-  <!-- Carrega o Tailwind CSS para estilização -->
+  <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Carrega as bibliotecas do React -->
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <!-- Carrega o Babel para traduzir JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Carrega o Axios para fazer requisições HTTP -->
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <style>
     body {
@@ -44,15 +38,13 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
 
-    // URL da nossa API backend
-    const API_URL = 'http://192.168.18.183:3000/jogos';
-
-    // Lista de plataformas para o filtro. Adicione mais aqui!
+    const API_BASE_URL = 'http://192.168.18.183:3000';
+    const HLTB_API_URL = 'http://192.168.18.183:3002/howlongtobeat';
+    const RAWG_API_URL = 'http://192.168.18.183:3003/rawg'; // Nova API
     const PLATAFORMAS = ['EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Steam', 'GOG', 'EA App'];
 
     // --- Componentes ---
 
-    // Componente para o Cartão do Jogo
     function GameCard({ jogo, onEdit, onDelete }) {
       const formatarGameplay = (minutos) => {
         if (minutos === null || minutos === undefined) return 'N/A';
@@ -93,24 +85,69 @@
       );
     }
 
-    // Componente para o Formulário (Modal)
     function GameFormModal({ jogo, onSave, onCancel }) {
       const [formData, setFormData] = useState({
         titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: ''
       });
+      const [isSearching, setIsSearching] = useState(false);
 
       useEffect(() => {
         if (jogo) {
-          // Se estamos editando, preenchemos o formulário
           const lancamentoFormatado = jogo.lancamento ? new Date(jogo.lancamento).toISOString().split('T')[0] : '';
-          // Converte minutos para horas para exibir no formulário
           const gameplayEmHoras = jogo.gameplay_minutos ? Math.round(jogo.gameplay_minutos / 60) : '';
           setFormData({ ...jogo, lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras });
         } else {
-          // Se for um novo jogo, o formulário começa em branco
           setFormData({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '' });
         }
       }, [jogo]);
+      
+      // Efeito para procurar em ambas as APIs quando o título muda
+      useEffect(() => {
+        if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo)) {
+          setIsSearching(false);
+          return;
+        }
+
+        setIsSearching(true);
+        const handler = setTimeout(async () => {
+          const title = formData.titulo;
+          
+          // Procura HLTB
+          try {
+            const hltbResponse = await axios.get(`${HLTB_API_URL}/${encodeURIComponent(title)}`);
+            if (hltbResponse.data && hltbResponse.data.times) {
+              setFormData(prev => ({
+                ...prev,
+                gameplay_horas: prev.gameplay_horas || Math.round(hltbResponse.data.times.main_story) || '',
+                capa: prev.capa || hltbResponse.data.image_url || ''
+              }));
+            }
+          } catch (error) {
+            console.warn(`Não foi possível encontrar "${title}" no HLTB.`, error.message);
+          }
+
+          // Procura RAWG
+          try {
+            const rawgResponse = await axios.get(`${RAWG_API_URL}/${encodeURIComponent(title)}`);
+            if (rawgResponse.data) {
+              setFormData(prev => ({
+                ...prev,
+                metacritic: prev.metacritic || rawgResponse.data.metacritic || '',
+                lancamento: prev.lancamento || rawgResponse.data.released || ''
+              }));
+            }
+          } catch (error) {
+            console.warn(`Não foi possível encontrar "${title}" no RAWG.`, error.message);
+          }
+
+          setIsSearching(false);
+        }, 1000); // Espera 1 segundo após o utilizador parar de digitar
+
+        return () => {
+          clearTimeout(handler);
+        };
+      }, [formData.titulo]);
+
 
       const handleChange = (e) => {
         const { name, value } = e.target;
@@ -127,15 +164,32 @@
           <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-lg m-4">
             <form onSubmit={handleSubmit}>
               <div className="p-6">
-                <h2 className="text-2xl font-bold mb-6">{jogo ? 'Editar Jogo' : 'Adicionar Novo Jogo'}</h2>
+                <h2 className="text-2xl font-bold mb-6">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5">
                   <div className="md:col-span-2">
-                    <label htmlFor="titulo" className="block text-sm font-medium text-gray-300 mb-1">Título</label>
+                    <label htmlFor="titulo" className="flex items-center justify-between text-sm font-medium text-gray-300 mb-1">
+                      <span>Título</span>
+                      {isSearching && <span className="text-xs text-cyan-400">A procurar dados...</span>}
+                    </label>
                     <input id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label htmlFor="plataforma" className="block text-sm font-medium text-gray-300 mb-1">Plataforma</label>
-                    <input id="plataforma" name="plataforma" value={formData.plataforma} onChange={handleChange} placeholder="Ex: Steam" required className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <select
+                        id="plataforma"
+                        name="plataforma"
+                        value={formData.plataforma}
+                        onChange={handleChange}
+                        required
+                        className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="" disabled>Selecione uma plataforma</option>
+                        {PLATAFORMAS.map(plataforma => (
+                            <option key={plataforma} value={plataforma}>
+                                {plataforma}
+                            </option>
+                        ))}
+                    </select>
                   </div>
                    <div>
                     <label htmlFor="lancamento" className="block text-sm font-medium text-gray-300 mb-1">Data de Lançamento</label>
@@ -157,7 +211,7 @@
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-4 rounded-b-lg">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md font-semibold transition-colors">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Salvar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Guardar</button>
               </div>
             </form>
           </div>
@@ -165,9 +219,9 @@
       );
     }
     
-    // --- Componente Principal ---
     function App() {
       const [jogos, setJogos] = useState([]);
+      const [totalJogos, setTotalJogos] = useState(0);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       
@@ -189,7 +243,6 @@
           const params = new URLSearchParams();
           for (const key in filters) {
             if (filters[key]) {
-              // Converte horas para minutos para o filtro de gameplay
               if (key === 'gameplay_min' || key === 'gameplay_max') {
                   params.append(key, filters[key] * 60);
               } else {
@@ -197,12 +250,13 @@
               }
             }
           }
-          const response = await axios.get(`${API_URL}?${params.toString()}`);
-          setJogos(response.data);
+          const response = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
+          setJogos(response.data.filteredGames);
+          setTotalJogos(response.data.totalGames);
           setError(null);
         } catch (err) {
-          console.error("Erro ao buscar jogos:", err);
-          setError("Não foi possível carregar os jogos. O backend está rodando?");
+          console.error("Erro ao procurar jogos:", err);
+          setError("Não foi possível carregar os jogos. O backend está a correr?");
         } finally {
           setLoading(false);
         }
@@ -211,7 +265,7 @@
       useEffect(() => {
         const handler = setTimeout(() => {
             fetchJogos();
-        }, 500); // Debounce de 500ms
+        }, 500);
         return () => {
             clearTimeout(handler);
         };
@@ -233,42 +287,40 @@
       };
 
       const handleSaveGame = async (gameData) => {
-        // Converte horas para minutos e strings vazias para null antes de enviar
         const dataToSend = {
           ...gameData,
           gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10) * 60 : null,
           metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null,
         };
-        // Remove a propriedade temporária 'gameplay_horas' para não enviá-la ao backend
         delete dataToSend.gameplay_horas;
         
         try {
           if (editingGame) {
-            // Atualizar (PUT)
-            await axios.put(`${API_URL}/${editingGame.id}`, dataToSend);
+            await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, dataToSend);
           } else {
-            // Criar (POST)
-            await axios.post(API_URL, dataToSend);
+            await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
           }
           handleCloseModal();
-          fetchJogos(); // Re-busca os jogos para atualizar a lista
+          fetchJogos();
         } catch (err) {
-          console.error("Erro ao salvar o jogo:", err);
-          alert("Falha ao salvar o jogo. Verifique o console para mais detalhes.");
+          console.error("Erro ao guardar o jogo:", err);
+          alert("Falha ao guardar o jogo. Verifique a consola para mais detalhes.");
         }
       };
 
       const handleDeleteGame = async (jogo) => {
-        if (window.confirm(`Tem certeza que deseja excluir "${jogo.titulo}"?`)) {
+        if (window.confirm(`Tem a certeza que deseja eliminar "${jogo.titulo}"?`)) {
           try {
-            await axios.delete(`${API_URL}/${jogo.id}`);
-            fetchJogos(); // Re-busca os jogos
+            await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`);
+            fetchJogos();
           } catch (err) {
-            console.error("Erro ao excluir o jogo:", err);
-            alert("Falha ao excluir o jogo.");
+            console.error("Erro ao eliminar o jogo:", err);
+            alert("Falha ao eliminar o jogo.");
           }
         }
       };
+
+      const hasFilters = Object.values(filters).some(value => value !== '');
 
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
@@ -276,21 +328,27 @@
         <div className="container mx-auto p-4 sm:p-6 lg:p-8">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center sm:text-left">
-              <h1 className="text-4xl font-bold text-white">Minha Biblioteca de Jogos</h1>
+              <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
               <p className="text-gray-400 mt-2">
-                Atualmente com <span className="font-bold text-cyan-400">{jogos.length}</span> jogos na sua coleção.
+                {hasFilters ? (
+                  <>
+                    A exibir <span className="font-bold text-cyan-400">{jogos.length}</span> de <span className="font-bold text-cyan-400">{totalJogos}</span> jogos.
+                  </>
+                ) : (
+                  <>
+                    Atualmente com <span className="font-bold text-cyan-400">{totalJogos}</span> jogos na sua coleção.
+                  </>
+                )}
               </p>
             </div>
             <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">
-              Adicionar Novo Jogo
+              Adicionar Jogo
             </button>
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              
-              {/* Campo de Plataforma alterado para um menu suspenso */}
               <select 
                 name="plataforma" 
                 value={filters.plataforma} 
@@ -304,22 +362,21 @@
                   </option>
                 ))}
               </select>
-
               <div className="flex items-center gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Gameplay Min (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Gameplay Mín (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-gray-400">-</span>
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Max (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Metacritic Min" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Metacritic Mín" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-gray-400">-</span>
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Max" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
           </div>
 
           {loading ? (
-            <h1 className="text-white text-2xl text-center mt-10">Carregando jogos...</h1>
+            <h1 className="text-white text-2xl text-center mt-10">A carregar jogos...</h1>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
               {jogos.length > 0 ? (
