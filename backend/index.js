@@ -8,16 +8,20 @@ const db = require('./db');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middlewares
+// --- CORREÇÃO: Configuração de CORS para Produção ---
 const corsOptions = {
-  origin: 'https://biblioteca-de-jogos.vercel.app' // URL do seu frontend no Vercel
+  // Permite pedidos apenas do seu frontend no Vercel
+  origin: 'https://biblioteca-de-jogos-psi.vercel.app' 
 };
 app.use(cors(corsOptions));
+
+
+// Middlewares
 app.use(express.json());
 
 // Rota principal (teste)
 app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos funcionando com sucesso!');
+  res.send('API da Biblioteca de Jogos está a funcionar!');
 });
 
 // --- ROTAS DO CRUD PARA JOGOS ---
@@ -133,7 +137,7 @@ app.put('/jogos/:id', async (req, res) => {
     if (err.code === '22007') { // Código de erro para formato de data inválido
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao atualizar jogo.');
+    res.status(500).send('Erro ao atualizar o jogo.');
   }
 });
 
@@ -149,11 +153,11 @@ app.delete('/jogos/:id', async (req, res) => {
     res.status(204).send(); 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao deletar o jogo.');
+    res.status(500).send('Erro ao eliminar o jogo.');
   }
 });
 
 // Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+  console.log(`Servidor a correr na porta ${port}`);
 });
