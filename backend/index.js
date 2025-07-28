@@ -14,15 +14,14 @@ app.use(express.json());
 
 // Rota principal (teste)
 app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos está a funcionar!');
+  res.send('API da Biblioteca de Jogos funcionando com sucesso!');
 });
 
 // --- ROTAS DO CRUD PARA JOGOS ---
 
-// ROTA GET: Listar todos os jogos (Read) com filtros e contagem total
+// ROTA GET: (sem alterações)
 app.get('/jogos', async (req, res) => {
   try {
-    // --- Lógica de filtragem ---
     const { plataforma, titulo, gameplay_min, gameplay_max, metacritic_min, metacritic_max } = req.query;
     let filterQuery = 'SELECT * FROM jogos';
     const conditions = [];
@@ -58,15 +57,11 @@ app.get('/jogos', async (req, res) => {
       filterQuery += ' WHERE ' + conditions.join(' AND ');
     }
     filterQuery += ' ORDER BY titulo ASC';
-
-    // --- Executa a query de filtro ---
+    
     const filteredResult = await db.query(filterQuery, values);
-
-    // --- Lógica para obter a contagem total ---
     const totalCountResult = await db.query('SELECT COUNT(*) FROM jogos');
     const totalGames = parseInt(totalCountResult.rows[0].count, 10);
 
-    // --- Envia a estrutura de resposta ---
     res.status(200).json({
       filteredGames: filteredResult.rows,
       totalGames: totalGames
@@ -78,7 +73,7 @@ app.get('/jogos', async (req, res) => {
   }
 });
 
-// --- DEMAIS ROTAS (POST, PUT, DELETE) ---
+// ROTA POST: Adicionar um novo jogo (com tratamento de erros)
 app.post('/jogos', async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
   if (!titulo || !plataforma) {
@@ -89,16 +84,24 @@ app.post('/jogos', async (req, res) => {
     VALUES($1, $2, $3, $4, $5, $6)
     RETURNING *;
   `;
-  const values = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa];
+  const values = [titulo, plataforma, lancamento || null, gameplay_minutos, metacritic, capa];
   try {
     const result = await db.query(query, values);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
+    // Lógica para identificar o erro específico da base de dados
+    if (err.code === '23505') { // Código de erro para violação de unicidade
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+    }
+    if (err.code === '22007') { // Código de erro para formato de data inválido
+        return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
+    }
     res.status(500).send('Erro ao adicionar o novo jogo.');
   }
 });
 
+// ROTA PUT: Atualizar um jogo existente (com tratamento de erros)
 app.put('/jogos/:id', async (req, res) => {
   const { id } = req.params;
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
@@ -111,7 +114,7 @@ app.put('/jogos/:id', async (req, res) => {
     WHERE id = $7
     RETURNING *;
   `;
-  const values = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, id];
+  const values = [titulo, plataforma, lancamento || null, gameplay_minutos, metacritic, capa, id];
   try {
     const result = await db.query(query, values);
     if (result.rowCount === 0) {
@@ -120,10 +123,18 @@ app.put('/jogos/:id', async (req, res) => {
     res.status(200).json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao atualizar o jogo.');
+    // Lógica para identificar o erro específico da base de dados
+    if (err.code === '23505') { // Código de erro para violação de unicidade
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+    }
+    if (err.code === '22007') { // Código de erro para formato de data inválido
+        return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
+    }
+    res.status(500).send('Erro ao atualizar jogo.');
   }
 });
 
+// ROTA DELETE: (sem alterações)
 app.delete('/jogos/:id', async (req, res) => {
   const { id } = req.params;
   const query = 'DELETE FROM jogos WHERE id = $1;';
@@ -135,11 +146,11 @@ app.delete('/jogos/:id', async (req, res) => {
     res.status(204).send(); 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao eliminar o jogo.');
+    res.status(500).send('Erro ao deletar o jogo.');
   }
 });
 
 // Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
-  console.log(`Servidor a correr na porta ${port}`);
+  console.log(`Servidor rodando na porta ${port}`);
 });

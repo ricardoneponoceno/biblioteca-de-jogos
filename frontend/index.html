@@ -37,10 +37,16 @@
 
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
+    // PRODUCAO
+    // const API_BASE_URL = 'http://192.168.18.183:3000';
+    // const HLTB_API_URL = 'http://192.168.18.183:3002/howlongtobeat';
+    // const RAWG_API_URL = 'http://192.168.18.183:3003/rawg';
 
-    const API_BASE_URL = 'http://192.168.18.183:3000';
-    const HLTB_API_URL = 'http://192.168.18.183:3002/howlongtobeat';
-    const RAWG_API_URL = 'http://192.168.18.183:3003/rawg'; // Nova API
+    // local
+    const API_BASE_URL = 'http://localhost:3000';
+    const HLTB_API_URL = 'http://localhost:3002/howlongtobeat';
+    const RAWG_API_URL = 'http://localhost:3003/rawg';
+
     const PLATAFORMAS = ['EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Steam', 'GOG', 'EA App'];
 
     // --- Componentes ---
@@ -101,7 +107,6 @@
         }
       }, [jogo]);
       
-      // Efeito para procurar em ambas as APIs quando o título muda
       useEffect(() => {
         if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo)) {
           setIsSearching(false);
@@ -112,7 +117,6 @@
         const handler = setTimeout(async () => {
           const title = formData.titulo;
           
-          // Procura HLTB
           try {
             const hltbResponse = await axios.get(`${HLTB_API_URL}/${encodeURIComponent(title)}`);
             if (hltbResponse.data && hltbResponse.data.times) {
@@ -126,7 +130,6 @@
             console.warn(`Não foi possível encontrar "${title}" no HLTB.`, error.message);
           }
 
-          // Procura RAWG
           try {
             const rawgResponse = await axios.get(`${RAWG_API_URL}/${encodeURIComponent(title)}`);
             if (rawgResponse.data) {
@@ -141,7 +144,7 @@
           }
 
           setIsSearching(false);
-        }, 1000); // Espera 1 segundo após o utilizador parar de digitar
+        }, 1000);
 
         return () => {
           clearTimeout(handler);
@@ -304,7 +307,12 @@
           fetchJogos();
         } catch (err) {
           console.error("Erro ao guardar o jogo:", err);
-          alert("Falha ao guardar o jogo. Verifique a consola para mais detalhes.");
+          // CORREÇÃO: Lógica para exibir a mensagem de erro específica
+          if (err.response && err.response.data && err.response.data.error) {
+            alert(err.response.data.error); // Exibe a mensagem específica do backend
+          } else {
+            alert("Falha ao salvar o jogo. Verifique o console para mais detalhes."); // Mensagem genérica
+          }
         }
       };
 
