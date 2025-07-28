@@ -9,7 +9,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Middlewares
-app.use(cors());
+const corsOptions = {
+  origin: 'https://biblioteca-de-jogos.vercel.app' // URL do seu frontend no Vercel
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Rota principal (teste)
