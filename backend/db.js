@@ -4,14 +4,13 @@ require('dotenv').config();
 // Importa a classe Pool da biblioteca pg
 const { Pool } = require('pg');
 
-// Cria uma nova instância do Pool com as configurações do banco de dados
-// As variáveis são lidas do arquivo .env
+// Cria uma nova instância do Pool usando a connection string
+// Isto funciona tanto localmente (se tiver um .env) como em produção (Render)
 const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_DATABASE,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
+  connectionString: process.env.DATABASE_URL,
+  // A linha abaixo é frequentemente necessária para ligar a bases de dados em produção
+  // como as do Render, que usam ligações seguras (SSL).
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 // Exporta um objeto com um método query que utiliza o pool
