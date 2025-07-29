@@ -1,8 +1,5 @@
 {
   "name": "biblioteca-de-jogos-monorepo",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "node frontend/create-config.js"
-  }
+  "private": true
 }
