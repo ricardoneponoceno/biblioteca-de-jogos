@@ -1,11 +1,16 @@
 # Dependências do Node.js
 /backend/node_modules
 
-# Arquivo de variáveis de ambiente
+# Ficheiro de variáveis de ambiente do Backend
 /backend/.env
+/backend/.env.local
 
-# Arquivos de log e sistema
+# Ficheiros de log e sistema
 npm-debug.log
 .DS_Store
 
+# Dados da Base de Dados
 /postgres-data/
+
+# Ficheiro de configuração do Frontend (NÃO VERSIONAR)
+/frontend/config.js

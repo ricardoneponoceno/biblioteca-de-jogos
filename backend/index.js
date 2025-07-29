@@ -8,25 +8,31 @@ const db = require('./db');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- CORREÇÃO: Configuração de CORS para Produção ---
+// --- Configuração de CORS Dinâmica ---
 const corsOptions = {
-  // Permite pedidos apenas do seu frontend no Vercel
-  origin: 'https://biblioteca-de-jogos-psi.vercel.app' 
+  // Lê o URL permitido da variável de ambiente
+  origin: process.env.CORS_ORIGIN
 };
 app.use(cors(corsOptions));
-
 
 // Middlewares
 app.use(express.json());
 
-// Rota principal (teste)
-app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos está a funcionar!');
+// --- NOVO PONTO DE CONFIGURAÇÃO PARA O FRONTEND ---
+app.get('/config', (req, res) => {
+  res.json({
+    hltbApiUrl: process.env.HLTB_API_URL,
+    rawgApiUrl: process.env.RAWG_API_URL,
+  });
 });
 
-// --- ROTAS DO CRUD PARA JOGOS ---
 
-// ROTA GET: (sem alterações)
+// Rota principal (teste)
+app.get('/', (req, res) => {
+  res.send('API da Biblioteca de Jogos executando com sucesso!');
+});
+
+// --- ROTAS DO CRUD PARA JOGOS (sem alterações) ---
 app.get('/jogos', async (req, res) => {
   try {
     const { plataforma, titulo, gameplay_min, gameplay_max, metacritic_min, metacritic_max } = req.query;
@@ -80,7 +86,6 @@ app.get('/jogos', async (req, res) => {
   }
 });
 
-// ROTA POST: Adicionar um novo jogo (com tratamento de erros)
 app.post('/jogos', async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
   if (!titulo || !plataforma) {
@@ -97,18 +102,16 @@ app.post('/jogos', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    // Lógica para identificar o erro específico da base de dados
-    if (err.code === '23505') { // Código de erro para violação de unicidade
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+    if (err.code === '23505') {
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
     }
-    if (err.code === '22007') { // Código de erro para formato de data inválido
+    if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao adicionar o novo jogo.');
+    res.status(500).send('Erro ao adicionar novo jogo.');
   }
 });
 
-// ROTA PUT: Atualizar um jogo existente (com tratamento de erros)
 app.put('/jogos/:id', async (req, res) => {
   const { id } = req.params;
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
@@ -130,18 +133,16 @@ app.put('/jogos/:id', async (req, res) => {
     res.status(200).json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    // Lógica para identificar o erro específico da base de dados
-    if (err.code === '23505') { // Código de erro para violação de unicidade
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+    if (err.code === '23505') {
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
     }
-    if (err.code === '22007') { // Código de erro para formato de data inválido
+    if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao atualizar o jogo.');
+    res.status(500).send('Erro ao atualizar jogo.');
   }
 });
 
-// ROTA DELETE: (sem alterações)
 app.delete('/jogos/:id', async (req, res) => {
   const { id } = req.params;
   const query = 'DELETE FROM jogos WHERE id = $1;';
@@ -153,11 +154,11 @@ app.delete('/jogos/:id', async (req, res) => {
     res.status(204).send(); 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao eliminar o jogo.');
+    res.status(500).send('Erro ao eliminar jogo.');
   }
 });
 
 // Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
-  console.log(`Servidor a correr na porta ${port}`);
+  console.log(`Servidor rodando na porta ${port}`);
 });
