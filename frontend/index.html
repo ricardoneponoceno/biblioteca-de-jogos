@@ -44,7 +44,7 @@
     
     // A variável API_BASE_URL agora vem do ficheiro config.js
     
-    const PLATAFORMAS = ['EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Steam', 'GOG', 'EA App', 'Ubisoft', 'Nintendo Switch', 'Nintendo 3ds'];
+    const PLATAFORMAS = ['EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Steam', 'GOG', 'EA App','Ubisoft', 'Nintendo Switch', 'Nintendo 3ds'];
 
     // --- Componentes ---
 
@@ -117,9 +117,20 @@
           try {
             const hltbResponse = await axios.get(`${apiConfig.hltbApiUrl}/${encodeURIComponent(title)}`);
             if (hltbResponse.data && hltbResponse.data.times) {
+              const { main_story, main_extra } = hltbResponse.data.times;
+              let averageGameplay = '';
+
+              // Calcula a média apenas se ambos os valores forem números válidos
+              if (typeof main_story === 'number' && typeof main_extra === 'number') {
+                averageGameplay = Math.round((main_story + main_extra) / 2);
+              } else if (typeof main_story === 'number') {
+                // Fallback para main_story se main_extra não estiver disponível
+                averageGameplay = Math.round(main_story);
+              }
+
               setFormData(prev => ({
                 ...prev,
-                gameplay_horas: prev.gameplay_horas || Math.round(hltbResponse.data.times.main_story) || '',
+                gameplay_horas: prev.gameplay_horas || averageGameplay || '',
                 capa: prev.capa || hltbResponse.data.image_url || ''
               }));
             }
@@ -211,7 +222,7 @@
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-4 rounded-b-lg">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md font-semibold transition-colors">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Guardar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Salvar</button>
               </div>
             </form>
           </div>
@@ -321,7 +332,7 @@
           if (err.response && err.response.data && err.response.data.error) {
             alert(err.response.data.error);
           } else {
-            alert("Falha ao salvar o jogo. Verifique o console para mais detalhes.");
+            alert("Falha ao salvar jogo. Verifique o console para mais detalhes.");
           }
         }
       };
@@ -360,7 +371,7 @@
               </p>
             </div>
             <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">
-              Adicionar Novo Jogo
+              Adicionar Jogo
             </button>
           </header>
 
@@ -394,7 +405,7 @@
           </div>
 
           {loading ? (
-            <h1 className="text-white text-2xl text-center mt-10">A carregar jogos...</h1>
+            <h1 className="text-white text-2xl text-center mt-10">Carregando jogos...</h1>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
               {jogos.length > 0 ? (
