@@ -8,17 +8,32 @@ const db = require('./db');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- Configuração de CORS Dinâmica ---
+// --- Configuração de CORS Dinâmica para Múltiplas Origens ---
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
+
+if (allowedOrigins.length === 0) {
+  console.error("ERRO: A variável de ambiente CORS_ORIGIN não está definida.");
+}
+
 const corsOptions = {
-  // Lê o URL permitido da variável de ambiente
-  origin: process.env.CORS_ORIGIN
+  origin: (origin, callback) => {
+    // Permite pedidos sem origem (ex: Postman, apps móveis)
+    if (!origin) return callback(null, true);
+    // Se a origem do pedido estiver na nossa lista de permitidos, permite-o
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Não permitido pela política de CORS'));
+    }
+  }
 };
 app.use(cors(corsOptions));
+
 
 // Middlewares
 app.use(express.json());
 
-// --- NOVO PONTO DE CONFIGURAÇÃO PARA O FRONTEND ---
+// --- PONTO DE CONFIGURAÇÃO PARA O FRONTEND ---
 app.get('/config', (req, res) => {
   res.json({
     hltbApiUrl: process.env.HLTB_API_URL,
@@ -29,7 +44,7 @@ app.get('/config', (req, res) => {
 
 // Rota principal (teste)
 app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos executando com sucesso!');
+  res.send('API da Biblioteca de Jogos está a funcionar!');
 });
 
 // --- ROTAS DO CRUD PARA JOGOS (sem alterações) ---
@@ -103,12 +118,12 @@ app.post('/jogos', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
     }
     if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao adicionar novo jogo.');
+    res.status(500).send('Erro ao adicionar o novo jogo.');
   }
 });
 
@@ -134,12 +149,12 @@ app.put('/jogos/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
     }
     if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao atualizar jogo.');
+    res.status(500).send('Erro ao atualizar o jogo.');
   }
 });
 
@@ -154,11 +169,11 @@ app.delete('/jogos/:id', async (req, res) => {
     res.status(204).send(); 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao eliminar jogo.');
+    res.status(500).send('Erro ao eliminar o jogo.');
   }
 });
 
 // Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+  console.log(`Servidor a correr na porta ${port}`);
 });
