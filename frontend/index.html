@@ -59,12 +59,15 @@
       return (
         <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col justify-between transform hover:scale-105 transition-transform duration-300">
           <div>
-            <img 
-              src={jogo.capa} 
-              alt={`Capa do jogo ${jogo.titulo}`} 
-              className="w-full h-48 object-cover"
-              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/400x600/1a202c/ffffff?text=Capa+N/D'; }}
-            />
+            {/* CORREÇÃO: A imagem agora usa object-contain com fundo preto */}
+            <div className="w-full h-48 bg-black flex items-center justify-center">
+              <img 
+                src={jogo.capa} 
+                alt={`Capa do jogo ${jogo.titulo}`} 
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/400x600/1a202c/ffffff?text=Capa+N/D'; }}
+              />
+            </div>
             <div className="p-4">
               <h2 className="text-lg font-bold text-white truncate" title={jogo.titulo}>{jogo.titulo}</h2>
               <p className="text-sm text-gray-400 mt-1">{jogo.plataforma}</p>
@@ -120,11 +123,9 @@
               const { main_story, main_extra } = hltbResponse.data.times;
               let averageGameplay = '';
 
-              // Calcula a média apenas se ambos os valores forem números válidos
               if (typeof main_story === 'number' && typeof main_extra === 'number') {
                 averageGameplay = Math.round((main_story + main_extra) / 2);
               } else if (typeof main_story === 'number') {
-                // Fallback para main_story se main_extra não estiver disponível
                 averageGameplay = Math.round(main_story);
               }
 
