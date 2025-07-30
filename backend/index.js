@@ -44,7 +44,7 @@ app.get('/config', (req, res) => {
 
 // Rota principal (teste)
 app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos está a funcionar!');
+  res.send('API da Biblioteca de Jogos executando com sucesso!');
 });
 
 // --- ROTAS DO CRUD PARA JOGOS (sem alterações) ---
@@ -118,12 +118,12 @@ app.post('/jogos', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
     }
     if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao adicionar o novo jogo.');
+    res.status(500).send('Erro ao adicionar jogo.');
   }
 });
 
@@ -149,12 +149,12 @@ app.put('/jogos/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na sua biblioteca.` });
+      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
     }
     if (err.code === '22007') {
         return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
     }
-    res.status(500).send('Erro ao atualizar o jogo.');
+    res.status(500).send('Erro ao atualizar jogo.');
   }
 });
 
@@ -169,11 +169,11 @@ app.delete('/jogos/:id', async (req, res) => {
     res.status(204).send(); 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Erro ao eliminar o jogo.');
+    res.status(500).send('Erro ao eliminar jogo.');
   }
 });
 
 // Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
-  console.log(`Servidor a correr na porta ${port}`);
+  console.log(`Servidor executando na porta ${port}`);
 });

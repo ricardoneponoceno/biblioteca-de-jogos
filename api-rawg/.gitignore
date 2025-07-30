@@ -1,0 +1,14 @@
+# Arquivos de configuração e segredos
+config.py
+.env
+
+# Pastas de ambiente virtual do Python
+.venv/
+venv/
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
+
+# Arquivos de sistema
+.DS_Store

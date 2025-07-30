@@ -1,3 +1,4 @@
+
 services:
   db:
     image: postgres:14
@@ -23,7 +24,6 @@ services:
     restart: always
     env_file:
       - ./backend/.env
-    # CORREÇÃO: Define explicitamente o anfitrião da base de dados para o Docker
     environment:
       - DB_HOST=db
     ports:
@@ -43,6 +43,36 @@ services:
       - "8081:80"
     depends_on:
       - backend
+    networks:
+      - gamelib-network
+
+  # Novo serviço para a API HLTB
+  api-hltb:
+    build:
+      context: ./api-hltb
+      dockerfile: Dockerfile
+    container_name: gamelib-api-hltb
+    restart: unless-stopped
+    environment: 
+      - CORS_ORIGIN=http://localhost:8081
+    ports:
+      - "3002:8000" # Mapeia a porta 3002 do seu PC para a 8000 do contentor
+    networks:
+      - gamelib-network
+
+  # Novo serviço para a API RAWG
+  api-rawg:
+    build:
+      context: ./api-rawg
+      dockerfile: Dockerfile
+    container_name: gamelib-api-rawg
+    restart: unless-stopped
+    env_file:
+      - ./api-rawg/.env # Carrega a chave de API do ficheiro .env
+    environment:
+      - CORS_ORIGIN=http://localhost:8081
+    ports:
+      - "3003:8000" # Mapeia a porta 3003 do seu PC para a 8000 do contentor
     networks:
       - gamelib-network
 
