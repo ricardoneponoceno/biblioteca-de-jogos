@@ -73,7 +73,7 @@
               <p className="text-sm text-gray-400 mt-1">{jogo.plataforma}</p>
               <div className="flex justify-between items-center mt-4">
                 <span className="text-xs text-gray-500">{formatarGameplay(jogo.gameplay_minutos)}</span>
-                <span className={`text-sm font-bold px-2 py-1 rounded ${jogo.metacritic >= 75 ? 'bg-green-500 text-white' : jogo.metacritic > 50 ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
+                <span className={`text-sm font-bold px-2 py-1 rounded ${jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-blue-500 text-white' : jogo.metacritic >= 75 ? 'bg-green-500 text-white' : jogo.metacritic >= 50 ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
                   {jogo.metacritic || 'N/A'}
                 </span>
               </div>
