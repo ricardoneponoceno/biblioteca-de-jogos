@@ -1,30 +1,33 @@
-require('dotenv').config();
+// Importa as bibliotecas
+require('dotenv').config({ path: './.env' });
 const { Pool } = require('pg');
 
-const isProduction = process.env.NODE_ENV === 'production';
+let pool;
+const connectionConfig = {};
 
-// Cria o objeto de configuração inicial
-const config = {
-  // O SSL é necessário em produção (Render)
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
-};
-
-// Se a DATABASE_URL estiver definida (no Render ou no .env.local para scripts),
-// usa-a. Esta tem prioridade.
+// Verifica se a DATABASE_URL existe (para produção no Render e scripts locais)
 if (process.env.DATABASE_URL) {
-  config.connectionString = process.env.DATABASE_URL;
+  connectionConfig.connectionString = process.env.DATABASE_URL;
+  // Apenas adiciona a configuração SSL se o URL não for localhost
+  if (!process.env.DATABASE_URL.includes('localhost')) {
+    connectionConfig.ssl = {
+      rejectUnauthorized: false
+    };
+  }
 } else {
-  // Caso contrário (no nosso ambiente Docker), usa as variáveis individuais
-  // do ficheiro .env.
-  config.user = process.env.DB_USER;
-  config.host = process.env.DB_HOST;
-  config.database = process.env.DB_DATABASE;
-  config.password = process.env.DB_PASSWORD;
-  config.port = process.env.DB_PORT;
+  // Configuração para o Docker Compose (usando variáveis separadas)
+  connectionConfig.user = process.env.DB_USER;
+  connectionConfig.host = process.env.DB_HOST;
+  connectionConfig.database = process.env.DB_DATABASE;
+  connectionConfig.password = process.env.DB_PASSWORD;
+  connectionConfig.port = process.env.DB_PORT;
 }
 
-const pool = new Pool(config);
+pool = new Pool(connectionConfig);
 
+// Exporta um objeto com os métodos query e getClient
 module.exports = {
   query: (text, params) => pool.query(text, params),
+  getClient: () => pool.connect(),
 };
+

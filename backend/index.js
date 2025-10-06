@@ -1,39 +1,34 @@
 // Importa as bibliotecas
-require('dotenv').config();
+require('dotenv').config({ path: './.env' });
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 
-// Inicializa a aplicação express
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- Configuração de CORS Dinâmica para Múltiplas Origens ---
+// --- Configuração de CORS Dinâmica ---
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
-
-if (allowedOrigins.length === 0) {
-  console.error("ERRO: A variável de ambiente CORS_ORIGIN não está definida.");
-}
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Permite pedidos sem origem (ex: Postman, apps móveis)
-    if (!origin) return callback(null, true);
-    // Se a origem do pedido estiver na nossa lista de permitidos, permite-o
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Não permitido pela política de CORS'));
     }
-  }
+  },
 };
+
 app.use(cors(corsOptions));
-
-
-// Middlewares
 app.use(express.json());
 
-// --- PONTO DE CONFIGURAÇÃO PARA O FRONTEND ---
+// --- ROTAS ---
+
+app.get('/', (req, res) => {
+  res.send('API da Biblioteca de Jogos está a funcionar!');
+});
+
 app.get('/config', (req, res) => {
   res.json({
     hltbApiUrl: process.env.HLTB_API_URL,
@@ -41,139 +36,186 @@ app.get('/config', (req, res) => {
   });
 });
 
-
-// Rota principal (teste)
-app.get('/', (req, res) => {
-  res.send('API da Biblioteca de Jogos executando com sucesso!');
+app.get('/generos', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM generos ORDER BY name ASC');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error("Erro ao procurar géneros:", err);
+    res.status(500).send({ error: 'Erro ao procurar os géneros.' });
+  }
 });
 
-// --- ROTAS DO CRUD PARA JOGOS (sem alterações) ---
 app.get('/jogos', async (req, res) => {
-  try {
-    const { plataforma, titulo, gameplay_min, gameplay_max, metacritic_min, metacritic_max } = req.query;
-    let filterQuery = 'SELECT * FROM jogos';
-    const conditions = [];
+    const { titulo, plataforma, genero, gameplay_min, gameplay_max, metacritic_min, metacritic_max } = req.query;
+    let query = `
+      SELECT 
+        j.*, 
+        (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) as generos
+      FROM jogos j
+    `;
+    const whereClauses = [];
     const values = [];
     let paramIndex = 1;
 
     if (titulo) {
-      conditions.push(`titulo ILIKE $${paramIndex++}`);
-      values.push(`%${titulo}%`);
+        whereClauses.push(`j.titulo ILIKE $${paramIndex++}`);
+        values.push(`%${titulo}%`);
     }
     if (plataforma) {
-      conditions.push(`plataforma ILIKE $${paramIndex++}`);
-      values.push(`%${plataforma}%`);
+        whereClauses.push(`j.plataforma = $${paramIndex++}`);
+        values.push(plataforma);
     }
     if (gameplay_min) {
-        conditions.push(`gameplay_minutos >= $${paramIndex++}`);
-        values.push(parseInt(gameplay_min));
+        whereClauses.push(`j.gameplay_minutos >= $${paramIndex++}`);
+        values.push(gameplay_min);
     }
     if (gameplay_max) {
-        conditions.push(`gameplay_minutos <= $${paramIndex++}`);
-        values.push(parseInt(gameplay_max));
+        whereClauses.push(`j.gameplay_minutos <= $${paramIndex++}`);
+        values.push(gameplay_max);
     }
     if (metacritic_min) {
-      conditions.push(`metacritic >= $${paramIndex++}`);
-      values.push(parseInt(metacritic_min));
+        whereClauses.push(`j.metacritic >= $${paramIndex++}`);
+        values.push(metacritic_min);
     }
-     if (metacritic_max) {
-      conditions.push(`metacritic <= $${paramIndex++}`);
-      values.push(parseInt(metacritic_max));
+    if (metacritic_max) {
+        whereClauses.push(`j.metacritic <= $${paramIndex++}`);
+        values.push(metacritic_max);
+    }
+    if (genero) {
+        query += ` JOIN jogo_generos jg_filter ON j.id = jg_filter.game_id JOIN generos g_filter ON jg_filter.genero_id = g_filter.id`;
+        whereClauses.push(`g_filter.name = $${paramIndex++}`);
+        values.push(genero);
     }
 
-    if (conditions.length > 0) {
-      filterQuery += ' WHERE ' + conditions.join(' AND ');
+    if (whereClauses.length > 0) {
+        query += ` WHERE ${whereClauses.join(' AND ')}`;
     }
-    filterQuery += ' ORDER BY titulo ASC';
     
-    const filteredResult = await db.query(filterQuery, values);
-    const totalCountResult = await db.query('SELECT COUNT(*) FROM jogos');
-    const totalGames = parseInt(totalCountResult.rows[0].count, 10);
+    query += ` GROUP BY j.id ORDER BY j.titulo ASC`;
 
-    res.status(200).json({
-      filteredGames: filteredResult.rows,
-      totalGames: totalGames
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Erro ao procurar os jogos na base de dados.');
-  }
+    try {
+        const [filteredResult, totalResult] = await Promise.all([
+            db.query(query, values),
+            db.query('SELECT COUNT(*) FROM jogos')
+        ]);
+        res.status(200).json({
+            filteredGames: filteredResult.rows,
+            totalGames: parseInt(totalResult.rows[0].count, 10)
+        });
+    } catch (err) {
+        console.error("Erro ao procurar jogos:", err);
+        res.status(500).json({ error: 'Erro ao procurar os jogos no banco de dados.' });
+    }
 });
 
 app.post('/jogos', async (req, res) => {
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
-  if (!titulo || !plataforma) {
-    return res.status(400).json({ error: 'Título e plataforma são campos obrigatórios.' });
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos } = req.body;
+  if (!lancamento || lancamento === '') {
+    return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
-  const query = `
-    INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa)
-    VALUES($1, $2, $3, $4, $5, $6)
-    RETURNING *;
-  `;
-  const values = [titulo, plataforma, lancamento || null, gameplay_minutos, metacritic, capa];
+
+  const client = await db.getClient();
   try {
-    const result = await db.query(query, values);
-    res.status(201).json(result.rows[0]);
+    await client.query('BEGIN');
+    const insertGameQuery = `
+      INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa) 
+      VALUES($1, $2, $3, $4, $5, $6) 
+      RETURNING *;
+    `;
+    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa];
+    const newGameResult = await client.query(insertGameQuery, gameValues);
+    const newGame = newGameResult.rows[0];
+
+    if (generos && generos.length > 0) {
+      const insertGenresQuery = 'INSERT INTO jogo_generos(game_id, genero_id) VALUES ' + generos.map((_, i) => `($${2*i + 1}, $${2*i + 2})`).join(',');
+      const genreValues = generos.flatMap(generoId => [newGame.id, generoId]);
+      await client.query(insertGenresQuery, genreValues);
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json(newGame);
   } catch (err) {
-    console.error(err);
+    await client.query('ROLLBACK');
+    console.error("Erro ao adicionar jogo:", err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
+      return res.status(409).json({ error: `O jogo com o título "${titulo}" já existe.` });
     }
-    if (err.code === '22007') {
-        return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
-    }
-    res.status(500).send('Erro ao adicionar jogo.');
+    res.status(500).json({ error: 'Erro ao adicionar o jogo.' });
+  } finally {
+    client.release();
   }
 });
 
 app.put('/jogos/:id', async (req, res) => {
   const { id } = req.params;
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa } = req.body;
-  if (!titulo || !plataforma) {
-    return res.status(400).json({ error: 'Título e plataforma são campos obrigatórios.' });
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos } = req.body;
+  if (!lancamento || lancamento === '') {
+    return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
-  const query = `
-    UPDATE jogos 
-    SET titulo = $1, plataforma = $2, lancamento = $3, gameplay_minutos = $4, metacritic = $5, capa = $6
-    WHERE id = $7
-    RETURNING *;
-  `;
-  const values = [titulo, plataforma, lancamento || null, gameplay_minutos, metacritic, capa, id];
+
+  const client = await db.getClient();
   try {
-    const result = await db.query(query, values);
-    if (result.rowCount === 0) {
+    await client.query('BEGIN');
+
+    const updateGameQuery = `
+      UPDATE jogos 
+      SET titulo = $1, plataforma = $2, lancamento = $3, gameplay_minutos = $4, metacritic = $5, capa = $6 
+      WHERE id = $7 
+      RETURNING *;
+    `;
+    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, id];
+    const updatedGameResult = await client.query(updateGameQuery, gameValues);
+    
+    if (updatedGameResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
-    res.status(200).json(result.rows[0]);
+    
+    await client.query('DELETE FROM jogo_generos WHERE game_id = $1', [id]);
+    if (generos && generos.length > 0) {
+      const insertGenresQuery = 'INSERT INTO jogo_generos(game_id, genero_id) VALUES ' + generos.map((_, i) => `($${2*i + 1}, $${2*i + 2})`).join(',');
+      const genreValues = generos.flatMap(generoId => [id, generoId]);
+      await client.query(insertGenresQuery, genreValues);
+    }
+    
+    await client.query('COMMIT');
+    res.status(200).json(updatedGameResult.rows[0]);
   } catch (err) {
-    console.error(err);
-    if (err.code === '23505') {
-      return res.status(409).json({ error: `Já existe um jogo com o título "${titulo}" na biblioteca.` });
+    await client.query('ROLLBACK');
+    console.error("Erro ao atualizar jogo:", err);
+     if (err.code === '23505') {
+      return res.status(409).json({ error: `O jogo com o título "${titulo}" já existe.` });
     }
-    if (err.code === '22007') {
-        return res.status(400).json({ error: 'O formato da data de lançamento é inválido.' });
-    }
-    res.status(500).send('Erro ao atualizar jogo.');
+    res.status(500).json({ error: 'Erro ao atualizar o jogo.' });
+  } finally {
+    client.release();
   }
 });
 
 app.delete('/jogos/:id', async (req, res) => {
-  const { id } = req.params;
-  const query = 'DELETE FROM jogos WHERE id = $1;';
-  try {
-    const result = await db.query(query, [id]);
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    const { id } = req.params;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM jogo_generos WHERE game_id = $1', [id]);
+        const result = await client.query('DELETE FROM jogos WHERE id = $1', [id]);
+        await client.query('COMMIT');
+
+        if (result.rowCount > 0) {
+            res.status(204).send();
+        } else {
+            res.status(404).json({ error: 'Jogo não encontrado.' });
+        }
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Erro ao deletar jogo:", err);
+        res.status(500).json({ error: 'Erro ao deletar o jogo.' });
+    } finally {
+        client.release();
     }
-    res.status(204).send(); 
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Erro ao eliminar jogo.');
-  }
 });
 
-// Inicia o servidor para escutar na porta definida
 app.listen(port, () => {
   console.log(`Servidor executando na porta ${port}`);
 });

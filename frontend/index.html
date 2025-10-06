@@ -16,6 +16,7 @@
   <script src="config.js"></script>
 
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
     body {
       font-family: 'Inter', sans-serif;
       background-color: #1a202c;
@@ -32,7 +33,19 @@
       align-items: center;
       z-index: 50;
     }
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+    .genre-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .genre-tag {
+      background-color: #4a5568;
+      color: #e2e8f0;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -50,7 +63,7 @@
 
     function GameCard({ jogo, onEdit, onDelete }) {
       const formatarGameplay = (minutos) => {
-        if (minutos === null || minutos === undefined) return 'N/A';
+        if (!minutos) return 'N/A';
         const horas = Math.floor(minutos / 60);
         const mins = minutos % 60;
         return `${horas}h ${mins}m`;
@@ -59,7 +72,6 @@
       return (
         <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col justify-between transform hover:scale-105 transition-transform duration-300">
           <div>
-            {/* CORREÇÃO: A imagem agora usa object-contain com fundo preto */}
             <div className="w-full h-48 bg-black flex items-center justify-center">
               <img 
                 src={jogo.capa} 
@@ -71,6 +83,11 @@
             <div className="p-4">
               <h2 className="text-lg font-bold text-white truncate" title={jogo.titulo}>{jogo.titulo}</h2>
               <p className="text-sm text-gray-400 mt-1">{jogo.plataforma}</p>
+              <div className="genre-list">
+                {jogo.generos && jogo.generos.map(genero => (
+                  <span key={genero} className="genre-tag">{genero}</span>
+                ))}
+              </div>
               <div className="flex justify-between items-center mt-4">
                 <span className="text-xs text-gray-500">{formatarGameplay(jogo.gameplay_minutos)}</span>
                 <span className={`text-sm font-bold px-2 py-1 rounded ${jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-blue-500 text-white' : jogo.metacritic >= 75 ? 'bg-green-500 text-white' : jogo.metacritic >= 50 ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
@@ -91,9 +108,9 @@
       );
     }
 
-    function GameFormModal({ jogo, onSave, onCancel, apiConfig }) {
+    function GameFormModal({ jogo, onSave, onCancel, apiConfig, allGeneros }) {
       const [formData, setFormData] = useState({
-        titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: ''
+        titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
       });
       const [isSearching, setIsSearching] = useState(false);
 
@@ -101,11 +118,14 @@
         if (jogo) {
           const lancamentoFormatado = jogo.lancamento ? new Date(jogo.lancamento).toISOString().split('T')[0] : '';
           const gameplayEmHoras = jogo.gameplay_minutos ? Math.round(jogo.gameplay_minutos / 60) : '';
-          setFormData({ ...jogo, lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras });
+          const generoIds = allGeneros
+            .filter(g => jogo.generos && jogo.generos.includes(g.name))
+            .map(g => g.id);
+          setFormData({ ...jogo, lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras, generos: generoIds });
         } else {
-          setFormData({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '' });
+          setFormData({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: [] });
         }
-      }, [jogo]);
+      }, [jogo, allGeneros]);
       
       useEffect(() => {
         if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo) || !apiConfig.hltbApiUrl) {
@@ -166,6 +186,15 @@
         setFormData(prev => ({ ...prev, [name]: value }));
       };
 
+      const handleGeneroChange = (generoId) => {
+        setFormData(prev => {
+          const newGeneros = prev.generos.includes(generoId)
+            ? prev.generos.filter(id => id !== generoId)
+            : [...prev.generos, generoId];
+          return { ...prev, generos: newGeneros };
+        });
+      };
+
       const handleSubmit = (e) => {
         e.preventDefault();
         onSave(formData);
@@ -173,9 +202,9 @@
 
       return (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-lg m-4">
+          <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-2xl m-4 overflow-hidden">
             <form onSubmit={handleSubmit}>
-              <div className="p-6">
+              <div className="p-6 max-h-[80vh] overflow-y-auto">
                 <h2 className="text-2xl font-bold mb-6">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5">
                   <div className="md:col-span-2">
@@ -219,6 +248,22 @@
                     <label htmlFor="capa" className="block text-sm font-medium text-gray-300 mb-1">URL da Capa</label>
                     <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Gêneros</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-700 p-3 rounded-md max-h-48 overflow-y-auto">
+                      {allGeneros.map(genero => (
+                        <label key={genero.id} className="flex items-center space-x-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            className="form-checkbox h-4 w-4 bg-gray-600 border-gray-500 rounded text-cyan-500 focus:ring-cyan-600"
+                            checked={formData.generos.includes(genero.id)}
+                            onChange={() => handleGeneroChange(genero.id)}
+                          />
+                          <span>{genero.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-4 rounded-b-lg">
@@ -234,9 +279,10 @@
     function App() {
       const [jogos, setJogos] = useState([]);
       const [totalJogos, setTotalJogos] = useState(0);
+      const [allGeneros, setAllGeneros] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
-      const [apiConfig, setApiConfig] = useState({}); // Novo estado para guardar os URLs
+      const [apiConfig, setApiConfig] = useState({});
       
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingGame, setEditingGame] = useState(null);
@@ -244,27 +290,37 @@
       const [filters, setFilters] = useState({
         titulo: '',
         plataforma: '',
+        genero: '',
         gameplay_min: '',
         gameplay_max: '',
         metacritic_min: '',
         metacritic_max: ''
       });
 
-      // Efeito para buscar a configuração da API ao carregar
       useEffect(() => {
-        const fetchApiConfig = async () => {
+        const fetchInitialData = async () => {
             try {
-                const response = await axios.get(`${API_BASE_URL}/config`);
-                setApiConfig(response.data);
+              if (typeof API_BASE_URL === 'undefined') {
+                setTimeout(fetchInitialData, 100);
+                return;
+              }
+              const [configRes, generosRes] = await Promise.all([
+                axios.get(`${API_BASE_URL}/config`),
+                axios.get(`${API_BASE_URL}/generos`)
+              ]);
+              setApiConfig(configRes.data);
+              setAllGeneros(generosRes.data);
             } catch (err) {
-                console.error("Não foi possível carregar a configuração da API", err);
+                console.error("Não foi possível carregar os dados iniciais", err);
+                setError("Não foi possível carregar as configurações. O backend está rodando?");
             }
         };
-        fetchApiConfig();
+        fetchInitialData();
       }, []);
 
       const fetchJogos = useCallback(async () => {
         try {
+          if (typeof API_BASE_URL === 'undefined') return;
           setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) {
@@ -296,7 +352,7 @@
             clearTimeout(handler);
         };
       }, [filters, fetchJogos]);
-
+      
       const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
@@ -377,7 +433,7 @@
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <select 
                 name="plataforma" 
@@ -389,6 +445,19 @@
                 {PLATAFORMAS.map(plataforma => (
                   <option key={plataforma} value={plataforma}>
                     {plataforma}
+                  </option>
+                ))}
+              </select>
+              <select 
+                name="genero" 
+                value={filters.genero} 
+                onChange={handleFilterChange} 
+                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos os Gêneros</option>
+                {allGeneros.map(genero => (
+                  <option key={genero.id} value={genero.name}>
+                    {genero.name}
                   </option>
                 ))}
               </select>
@@ -425,6 +494,7 @@
               onSave={handleSaveGame} 
               onCancel={handleCloseModal}
               apiConfig={apiConfig}
+              allGeneros={allGeneros}
             />
           )}
         </div>
