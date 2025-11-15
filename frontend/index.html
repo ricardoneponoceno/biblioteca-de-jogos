@@ -53,7 +53,8 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    // ADICIONADO 'useRef'
+    const { useState, useEffect, useCallback, useRef } = React;
     
     // A variável API_BASE_URL agora vem do ficheiro config.js
     
@@ -113,6 +114,9 @@
         titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
       });
       const [isSearching, setIsSearching] = useState(false);
+      
+      // CRIA A REFERÊNCIA PARA O CAMPO TÍTULO
+      const titleInputRef = useRef(null);
 
       useEffect(() => {
         if (jogo) {
@@ -127,6 +131,16 @@
         }
       }, [jogo, allGeneros]);
       
+      // EFEITO PARA FOCAR NO TÍTULO QUANDO O MODAL ABRE
+      useEffect(() => {
+        // Usa um pequeno timeout para garantir que o elemento está renderizado antes de focar
+        setTimeout(() => {
+          if (titleInputRef.current) {
+            titleInputRef.current.focus();
+          }
+        }, 100);
+      }, []); // O array vazio [] garante que isto só corre uma vez quando o modal é montado
+
       useEffect(() => {
         if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo) || !apiConfig.hltbApiUrl) {
           setIsSearching(false);
@@ -212,7 +226,17 @@
                       <span>Título</span>
                       {isSearching && <span className="text-xs text-cyan-400">Procurando dados...</span>}
                     </label>
-                    <input id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    {/* ADICIONA A REF AO INPUT */}
+                    <input 
+                      ref={titleInputRef}
+                      id="titulo" 
+                      name="titulo" 
+                      value={formData.titulo} 
+                      onChange={handleChange} 
+                      placeholder="Ex: The Witcher 3" 
+                      required 
+                      className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                    />
                   </div>
                   <div>
                     <label htmlFor="plataforma" className="block text-sm font-medium text-gray-300 mb-1">Plataforma</label>
