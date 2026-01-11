@@ -19,7 +19,7 @@
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
     body {
       font-family: 'Inter', sans-serif;
-      background-color: #1a202c;
+      background-color: #0f172a; /* Um fundo ligeiramente mais escuro/azulado para contraste */
     }
     .modal-backdrop {
       position: fixed;
@@ -27,7 +27,8 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.7);
+      background-color: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px); /* Efeito de desfoque no fundo */
       display: flex;
       justify-content: center;
       align-items: center;
@@ -40,11 +41,28 @@
       margin-top: 8px;
     }
     .genre-tag {
-      background-color: #4a5568;
+      background-color: rgba(255, 255, 255, 0.1);
       color: #e2e8f0;
       padding: 2px 8px;
-      border-radius: 9999px;
-      font-size: 0.75rem;
+      border-radius: 4px;
+      font-size: 0.70rem;
+      font-weight: 500;
+    }
+    
+    /* Scrollbar personalizada */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b; 
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569; 
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b; 
     }
   </style>
 </head>
@@ -53,7 +71,6 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    // ADICIONADO 'useRef'
     const { useState, useEffect, useCallback, useRef } = React;
     
     // A variável API_BASE_URL agora vem do ficheiro config.js
@@ -71,39 +88,59 @@
       };
 
       return (
-        <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col justify-between transform hover:scale-105 transition-transform duration-300">
-          <div>
-            <div className="w-full h-48 bg-black flex items-center justify-center">
-              <img 
-                src={jogo.capa} 
-                alt={`Capa do jogo ${jogo.titulo}`} 
-                className="max-w-full max-h-full object-contain"
-                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/400x600/1a202c/ffffff?text=Capa+N/D'; }}
-              />
-            </div>
-            <div className="p-4">
-              <h2 className="text-lg font-bold text-white truncate" title={jogo.titulo}>{jogo.titulo}</h2>
-              <p className="text-sm text-gray-400 mt-1">{jogo.plataforma}</p>
-              <div className="genre-list">
-                {jogo.generos && jogo.generos.map(genero => (
-                  <span key={genero} className="genre-tag">{genero}</span>
-                ))}
-              </div>
-              <div className="flex justify-between items-center mt-4">
-                <span className="text-xs text-gray-500">{formatarGameplay(jogo.gameplay_minutos)}</span>
-                <span className={`text-sm font-bold px-2 py-1 rounded ${jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-blue-500 text-white' : jogo.metacritic >= 75 ? 'bg-green-500 text-white' : jogo.metacritic >= 50 ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
-                  {jogo.metacritic || 'N/A'}
-                </span>
-              </div>
+        <div className="bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col justify-between transform hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 group h-full border border-gray-700">
+          <div className="relative overflow-hidden aspect-[3/4]">
+             {/* MUDANÇA DE LAYOUT: 
+                - aspect-[3/4]: Define uma proporção vertical (poster).
+                - object-cover: A imagem preenche todo o espaço (pode cortar laterais se for horizontal).
+                - group-hover:scale-105: Um pequeno zoom elegante ao passar o mouse.
+             */}
+            <img 
+              src={jogo.capa} 
+              alt={`Capa do jogo ${jogo.titulo}`} 
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/600x800/1e293b/ffffff?text=Sem+Capa'; }}
+            />
+            
+            {/* Gradiente para melhorar a leitura do texto sobre a imagem (opcional) */}
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-60"></div>
+
+            {/* Botões de ação aparecem ao passar o mouse (overlay) */}
+            <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+                </button>
             </div>
           </div>
-          <div className="p-2 bg-gray-900 flex justify-end gap-2">
-            <button onClick={() => onEdit(jogo)} className="text-gray-400 hover:text-white transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-            </button>
-            <button onClick={() => onDelete(jogo)} className="text-gray-400 hover:text-red-500 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
-            </button>
+
+          <div className="p-4 flex flex-col flex-grow">
+            <h2 className="text-lg font-bold text-white leading-tight mb-1 line-clamp-2" title={jogo.titulo}>{jogo.titulo}</h2>
+            <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-3">{jogo.plataforma}</p>
+            
+            <div className="genre-list mb-4 flex-grow">
+              {jogo.generos && jogo.generos.slice(0, 3).map(genero => ( // Limita a 3 géneros para não esticar muito
+                <span key={genero} className="genre-tag">{genero}</span>
+              ))}
+              {jogo.generos && jogo.generos.length > 3 && <span className="genre-tag">+{jogo.generos.length - 3}</span>}
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-gray-700 mt-auto">
+              <div className="flex items-center text-gray-400 text-xs" title="Tempo de Jogo">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                 {formatarGameplay(jogo.gameplay_minutos)}
+              </div>
+              <span className={`text-xs font-bold px-2 py-1 rounded-md ${
+                  jogo.metacritic == null || jogo.metacritic === "N/A" ? 'bg-gray-700 text-gray-300' : 
+                  jogo.metacritic >= 75 ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 
+                  jogo.metacritic >= 50 ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30' : 
+                  'bg-red-600/20 text-red-400 border border-red-600/30'
+                }`}>
+                {jogo.metacritic || '-'}
+              </span>
+            </div>
           </div>
         </div>
       );
@@ -115,7 +152,6 @@
       });
       const [isSearching, setIsSearching] = useState(false);
       
-      // CRIA A REFERÊNCIA PARA O CAMPO TÍTULO
       const titleInputRef = useRef(null);
 
       useEffect(() => {
@@ -131,15 +167,13 @@
         }
       }, [jogo, allGeneros]);
       
-      // EFEITO PARA FOCAR NO TÍTULO QUANDO O MODAL ABRE
       useEffect(() => {
-        // Usa um pequeno timeout para garantir que o elemento está renderizado antes de focar
         setTimeout(() => {
           if (titleInputRef.current) {
             titleInputRef.current.focus();
           }
         }, 100);
-      }, []); // O array vazio [] garante que isto só corre uma vez quando o modal é montado
+      }, []);
 
       useEffect(() => {
         if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo) || !apiConfig.hltbApiUrl) {
@@ -215,71 +249,87 @@
       };
 
       return (
-        <div className="modal-backdrop">
-          <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-2xl m-4 overflow-hidden">
-            <form onSubmit={handleSubmit}>
-              <div className="p-6 max-h-[80vh] overflow-y-auto">
-                <h2 className="text-2xl font-bold mb-6">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5">
-                  <div className="md:col-span-2">
-                    <label htmlFor="titulo" className="flex items-center justify-between text-sm font-medium text-gray-300 mb-1">
+        <div className="modal-backdrop p-4">
+          <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-700 flex flex-col max-h-[90vh]">
+            <form onSubmit={handleSubmit} className="flex flex-col h-full">
+              <div className="p-6 overflow-y-auto flex-grow">
+                <h2 className="text-2xl font-bold mb-6 text-white border-b border-gray-700 pb-2">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
+                
+                {/* Layout do formulário melhorado */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  <div className="md:col-span-2 space-y-2">
+                    <label htmlFor="titulo" className="flex items-center justify-between text-sm font-semibold text-gray-300">
                       <span>Título</span>
-                      {isSearching && <span className="text-xs text-cyan-400">Procurando dados...</span>}
+                      {isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}
                     </label>
-                    {/* ADICIONA A REF AO INPUT */}
                     <input 
                       ref={titleInputRef}
-                      id="titulo" 
-                      name="titulo" 
-                      value={formData.titulo} 
-                      onChange={handleChange} 
-                      placeholder="Ex: The Witcher 3" 
-                      required 
-                      className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required 
+                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all" 
                     />
                   </div>
-                  <div>
-                    <label htmlFor="plataforma" className="block text-sm font-medium text-gray-300 mb-1">Plataforma</label>
+
+                  <div className="space-y-2">
+                    <label htmlFor="plataforma" className="block text-sm font-semibold text-gray-300">Plataforma</label>
                     <select
                         id="plataforma"
                         name="plataforma"
                         value={formData.plataforma}
                         onChange={handleChange}
                         required
-                        className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                     >
-                        <option value="" disabled>Selecione uma plataforma</option>
+                        <option value="" disabled>Selecione...</option>
                         {PLATAFORMAS.map(plataforma => (
-                            <option key={plataforma} value={plataforma}>
-                                {plataforma}
-                            </option>
+                            <option key={plataforma} value={plataforma}>{plataforma}</option>
                         ))}
                     </select>
                   </div>
-                   <div>
-                    <label htmlFor="lancamento" className="block text-sm font-medium text-gray-300 mb-1">Data de Lançamento</label>
-                    <input id="lancamento" name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                   
+                   <div className="space-y-2">
+                    <label htmlFor="lancamento" className="block text-sm font-semibold text-gray-300">Lançamento</label>
+                    <input id="lancamento" name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" 
+                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
-                  <div>
-                    <label htmlFor="gameplay_horas" className="block text-sm font-medium text-gray-300 mb-1">Gameplay (Horas)</label>
-                    <input id="gameplay_horas" name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" placeholder="Ex: 120" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+                  <div className="space-y-2">
+                    <label htmlFor="gameplay_horas" className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
+                    <input id="gameplay_horas" name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" placeholder="Ex: 120" 
+                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
-                  <div>
-                    <label htmlFor="metacritic" className="block text-sm font-medium text-gray-300 mb-1">Metacritic</label>
-                    <input id="metacritic" name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" placeholder="0-100" className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+                  <div className="space-y-2">
+                    <label htmlFor="metacritic" className="block text-sm font-semibold text-gray-300">Metacritic</label>
+                    <input id="metacritic" name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" placeholder="0-100" 
+                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
-                  <div className="md:col-span-2">
-                    <label htmlFor="capa" className="block text-sm font-medium text-gray-300 mb-1">URL da Capa</label>
-                    <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." className="p-2 w-full bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+                  <div className="md:col-span-2 space-y-2">
+                    <label htmlFor="capa" className="block text-sm font-semibold text-gray-300">URL da Capa (Vertical/Poster)</label>
+                    <div className="flex gap-4">
+                      <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." 
+                        className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
+                      />
+                      {formData.capa && (
+                        <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600">
+                           <img src={formData.capa} className="w-full h-full object-cover" alt="Preview" onError={(e) => e.target.style.display='none'} />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Gêneros</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-700 p-3 rounded-md max-h-48 overflow-y-auto">
+
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="block text-sm font-semibold text-gray-300">Gêneros</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-900/50 p-3 rounded-lg border border-gray-600 max-h-32 overflow-y-auto">
                       {allGeneros.map(genero => (
-                        <label key={genero.id} className="flex items-center space-x-2 cursor-pointer text-sm">
+                        <label key={genero.id} className="flex items-center space-x-2 cursor-pointer text-sm hover:text-white text-gray-300 transition-colors">
                           <input
                             type="checkbox"
-                            className="form-checkbox h-4 w-4 bg-gray-600 border-gray-500 rounded text-cyan-500 focus:ring-cyan-600"
+                            className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-blue-500"
                             checked={formData.generos.includes(genero.id)}
                             onChange={() => handleGeneroChange(genero.id)}
                           />
@@ -290,9 +340,10 @@
                   </div>
                 </div>
               </div>
-              <div className="bg-gray-900 p-4 flex justify-end gap-4 rounded-b-lg">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md font-semibold transition-colors">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-semibold transition-colors">Salvar</button>
+              
+              <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
+                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
               </div>
             </form>
           </div>
@@ -344,7 +395,7 @@
 
       const fetchJogos = useCallback(async () => {
         try {
-          if (typeof API_BASE_URL === 'undefined') return;
+          if (!API_BASE_URL) return;
           setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) {
@@ -456,14 +507,14 @@
             </button>
           </header>
 
-          <div className="bg-gray-800 p-4 rounded-lg mb-8">
+          <div className="bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
               <select 
                 name="plataforma" 
                 value={filters.plataforma} 
                 onChange={handleFilterChange} 
-                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Todas as Plataformas</option>
                 {PLATAFORMAS.map(plataforma => (
@@ -476,7 +527,7 @@
                 name="genero" 
                 value={filters.genero} 
                 onChange={handleFilterChange} 
-                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Todos os Gêneros</option>
                 {allGeneros.map(genero => (
@@ -486,28 +537,33 @@
                 ))}
               </select>
               <div className="flex items-center gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Gameplay Mín (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <span className="text-gray-400">-</span>
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                <span className="text-gray-500">-</span>
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Metacritic Mín" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <span className="text-gray-400">-</span>
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                <span className="text-gray-500">-</span>
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
               </div>
             </div>
           </div>
 
           {loading ? (
-            <h1 className="text-white text-2xl text-center mt-10">Carregando jogos...</h1>
+            <div className="flex justify-center mt-20">
+               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
               {jogos.length > 0 ? (
                 jogos.map(jogo => (
                   <GameCard key={jogo.id} jogo={jogo} onEdit={handleOpenModal} onDelete={handleDeleteGame} />
                 ))
               ) : (
-                <p className="text-gray-400 col-span-full text-center">Nenhum jogo encontrado com os filtros aplicados.</p>
+                <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500">
+                   <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   <p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p>
+                </div>
               )}
             </div>
           )}
