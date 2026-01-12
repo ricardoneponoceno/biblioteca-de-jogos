@@ -116,7 +116,6 @@
             <h2 className="text-lg font-bold text-white leading-tight mb-1 line-clamp-2" title={jogo.titulo}>{jogo.titulo}</h2>
             <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-3">{jogo.plataforma}</p>
             
-            {/* CORREÇÃO: Removemos 'flex-grow' daqui. A lista ocupa apenas o espaço necessário. */}
             <div className="genre-list mb-4">
               {jogo.generos && jogo.generos.slice(0, 3).map(genero => (
                 <span key={genero} className="genre-tag">{genero}</span>
@@ -124,14 +123,13 @@
               {jogo.generos && jogo.generos.length > 3 && <span className="genre-tag">+{jogo.generos.length - 3}</span>}
             </div>
 
-            {/* O mt-auto aqui garante que o rodapé fica sempre no fundo, empurrando o espaço vazio para o meio */}
             <div className="flex justify-between items-center pt-3 border-t border-gray-700 mt-auto">
               <div className="flex items-center text-gray-400 text-xs" title="Tempo de Jogo">
                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                  {formatarGameplay(jogo.gameplay_minutos)}
               </div>
               <span className={`text-xs font-bold px-2 py-1 rounded-md ${
-                  jogo.metacritic == null || jogo.metacritic === "N/A" ? 'bg-gray-700 text-gray-300' : 
+                  jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-blue-500 text-white' : 
                   jogo.metacritic >= 75 ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 
                   jogo.metacritic >= 50 ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30' : 
                   'bg-red-600/20 text-red-400 border border-red-600/30'
@@ -390,10 +388,10 @@
         fetchInitialData();
       }, []);
 
-      const fetchJogos = useCallback(async () => {
+      const fetchJogos = useCallback(async (background = false) => {
         try {
-          if (typeof API_BASE_URL === 'undefined') return;
-          setLoading(true);
+          if (!API_BASE_URL) return;
+          if (!background) setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) {
             if (filters[key]) {
@@ -412,7 +410,7 @@
           console.error("Erro ao procurar jogos:", err);
           setError("Não foi possível carregar os jogos. O backend está rodando?");
         } finally {
-          setLoading(false);
+          if (!background) setLoading(false);
         }
       }, [filters]);
 
@@ -455,7 +453,7 @@
             await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
           }
           handleCloseModal();
-          fetchJogos();
+          fetchJogos(true); // Chama em background para não resetar o scroll
         } catch (err) {
           console.error("Erro ao salvar jogo:", err);
           if (err.response && err.response.data && err.response.data.error) {
@@ -470,7 +468,7 @@
         if (window.confirm(`Tem certeza que deseja deletar "${jogo.titulo}"?`)) {
           try {
             await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`);
-            fetchJogos();
+            fetchJogos(true); // Chama em background para não resetar o scroll
           } catch (err) {
             console.error("Erro ao deletar jogo:", err);
             alert("Falha ao deletar jogo.");
@@ -564,7 +562,7 @@
             <GameFormModal 
               jogo={editingGame} 
               onSave={handleSaveGame} 
-              onCancel={handleCloseModal}
+              onCancel={handleCloseModal} 
               apiConfig={apiConfig}
               allGeneros={allGeneros}
             />
