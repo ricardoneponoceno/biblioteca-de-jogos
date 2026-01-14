@@ -74,8 +74,6 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
     
-    // A variável API_BASE_URL agora vem do ficheiro config.js
-    
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
     // --- Componentes ---
@@ -100,7 +98,7 @@
             
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-60"></div>
 
-            {/* CORREÇÃO: Os botões só aparecem se isAdmin for verdadeiro */}
+            {}
             {isAdmin && (
               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors">
@@ -144,7 +142,7 @@
     }
 
     function GameFormModal({ jogo, onSave, onCancel, apiConfig, allGeneros }) {
-      // (O código do modal permanece igual, não há alterações de lógica aqui)
+
       const [formData, setFormData] = useState({
         titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
       });
@@ -373,12 +371,11 @@
 
       // Efeito para verificar se é admin
       useEffect(() => {
-        // Verifica se a URL tem a flag ?mode=admin
         const params = new URLSearchParams(window.location.search);
         const mode = params.get('mode');
 
         if (mode === 'admin') {
-            // Se tiver, salva no localStorage e ativa o modo admin
+            // Se é admin, salva no localStorage e ativa o modo admin
             localStorage.setItem('gameLibAdmin', 'true');
             setIsAdmin(true);
             // Limpa a URL para não ficar visível
@@ -522,7 +519,7 @@
                 )}
               </p>
             </div>
-            {/* CORREÇÃO: O botão de adicionar só aparece se isAdmin for true */}
+            {}
             {isAdmin && (
                 <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">
                   Adicionar Jogo
