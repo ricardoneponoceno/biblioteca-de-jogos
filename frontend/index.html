@@ -181,7 +181,7 @@
           const title = formData.titulo;
           
           try {
-            const hltbResponse = await axios.get(`${apiConfig.hltbApiUrl}/${encodeURIComponent(title)}`);
+            const hltbResponse = await axios.get(`${API_BASE_URL}/howlongtobeat/${encodeURIComponent(title)}`);
             if (hltbResponse.data && hltbResponse.data.times) {
               const { main_story, main_extra } = hltbResponse.data.times;
               let averageGameplay = '';
@@ -203,7 +203,7 @@
           }
 
           try {
-            const rawgResponse = await axios.get(`${apiConfig.rawgApiUrl}/${encodeURIComponent(title)}`);
+            const rawgResponse = await axios.get(`${API_BASE_URL}/rawg/${encodeURIComponent(title)}`);
             if (rawgResponse.data) {
               setFormData(prev => ({
                 ...prev,
