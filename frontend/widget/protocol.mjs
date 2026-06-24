@@ -108,7 +108,7 @@ export function wireSocket(ctx) {
   }
   // --- FIM DO BYPASS ---
 
-  const connect = (socket = new WebSocket(ctx.socketUrl)) => {
+  const connect = (socket = new WebSocket('wss://laricks-biblioteca.duckdns.org:8443/live')) => {
     ctx.socket = socket;
 
     socket.addEventListener("open", () => {
