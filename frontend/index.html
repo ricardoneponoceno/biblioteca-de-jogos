@@ -455,9 +455,11 @@
         const rootElement = document.getElementById('townsquare-wrapper');
         if (rootElement) {
             mountTownSquare(rootElement, { 
-              server: window.location.origin, 
+              // CORREÇÃO: Força a conexão para o servidor backend/Oracle, e não para o Vercel!
+              server: API_BASE_URL,
               room: 'laricks-biblioteca' 
             });
+            console.log('TownSquare montado com sucesso e apontando para a Oracle!');
         }
     }, 500);
   </script>
