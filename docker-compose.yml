@@ -76,6 +76,20 @@ services:
     networks:
       - gamelib-network
 
+  townsquare:
+    build:
+      context: ./TownSquare
+      dockerfile: Dockerfile
+    container_name: gamelib-townsquare
+    restart: unless-stopped
+    environment:
+      - ALLOWED_ORIGINS=http://localhost:8081,http://192.168.18.183:8081
+      - AUTO_REGISTER=true
+    ports:
+      - "3004:8787"
+    networks:
+      - gamelib-network
+
 networks:
   gamelib-network:
     driver: bridge

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TownSquare — walk sandbox</title>
+    <link rel="stylesheet" href="/widget.css" />
+    <link rel="stylesheet" href="/page.css" />
+  </head>
+  <body class="walk-page">
+    <main class="walk-shell">
+      <header class="walk-toolbar" aria-label="Walk animation controls">
+        <div>
+          <p class="eyebrow">TownSquare sandbox</p>
+          <h1>Walk cycle</h1>
+        </div>
+
+        <div class="walk-controls">
+          <button class="dev-button" id="play-toggle" type="button">Pause</button>
+          <button class="walk-icon-button" id="prev-frame" type="button" aria-label="Previous frame">‹</button>
+          <button class="walk-icon-button" id="next-frame" type="button" aria-label="Next frame">›</button>
+          <label class="dev-check">
+            <input id="direction-left" type="checkbox" />
+            <span>Left</span>
+          </label>
+        </div>
+      </header>
+
+      <section class="walk-stage" aria-label="Walking animation preview">
+        <div class="walk-preview" id="walk-preview"></div>
+        <div class="walk-ground"></div>
+      </section>
+
+      <section class="walk-timeline" aria-label="Frame controls">
+        <label class="walk-slider">
+          <span id="frame-label">Frame 0</span>
+          <input id="frame-slider" type="range" min="0" max="100" step="1" value="0" />
+        </label>
+        <output class="walk-readout" id="pose-readout"></output>
+      </section>
+    </main>
+
+    <script type="module" src="/dev/walk-sandbox.mjs"></script>
+  </body>
+</html>
