@@ -619,22 +619,22 @@
   <div id="townsquare-wrapper"></div>
 
   <!-- Inicialização Nativa do TownSquare (Isolada e Segura) -->
-  <script type="module">
-    // Aguarda um pequeno instante para garantir que o DOM está pronto e evitar conflitos
+  <script>
+    // Usamos um script normal para injetar a tag module e esconder a palavra import do Babel Standalone
     setTimeout(() => {
         const rootElement = document.getElementById('townsquare-wrapper');
         if (rootElement) {
-            import(`${window.TOWNSQUARE_BASE_URL}/townsquare.mjs`)
-              .then((module) => {
-                module.mountTownSquare(rootElement, { 
-                  server: window.TOWNSQUARE_BASE_URL, 
-                  room: 'laricks-biblioteca' 
-                });
-                console.log('TownSquare montado com sucesso via script nativo!');
-              })
-              .catch((err) => {
-                console.error("Erro ao tentar carregar o módulo do TownSquare:", err);
+            const script = document.createElement('script');
+            script.type = 'module';
+            script.innerHTML = `
+              import { mountTownSquare } from '${window.TOWNSQUARE_BASE_URL}/townsquare.mjs';
+              mountTownSquare(document.getElementById('townsquare-wrapper'), { 
+                server: '${window.TOWNSQUARE_BASE_URL}', 
+                room: 'laricks-biblioteca' 
               });
+              console.log('TownSquare montado com sucesso via Injeção Dinâmica!');
+            `;
+            document.body.appendChild(script);
         }
     }, 500);
   </script>
