@@ -93,6 +93,21 @@ export function wireSocket(ctx) {
   const { browserId, self, peers } = ctx;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
 
+  // --- INÍCIO DO BYPASS DE CONEXÃO PARA A ORACLE ---
+  // Verifica se o site está a rodar no domínio da Vercel
+  if (window.location.hostname.includes('games.laricks.com.br')) {
+      try {
+          // Pega a URL original (que tem a sala) e troca apenas o servidor
+          const urlObj = new URL(ctx.socketUrl);
+          urlObj.host = 'laricks-biblioteca.duckdns.org:8443'; // Seu servidor Oracle
+          urlObj.protocol = 'wss:'; // Força conexão segura
+          ctx.socketUrl = urlObj.toString();
+      } catch (e) {
+          console.error("Erro ao redirecionar WebSocket para a Oracle:", e);
+      }
+  }
+  // --- FIM DO BYPASS ---
+
   const connect = (socket = new WebSocket(ctx.socketUrl)) => {
     ctx.socket = socket;
 
