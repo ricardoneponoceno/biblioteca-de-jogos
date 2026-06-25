@@ -7,30 +7,15 @@
   
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   
-  <!-- CSS DO TOWNSQUARE (Carregado nativamente) -->
+  <!-- CSS DO TOWNSQUARE (Carregado nativamente da Vercel) -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
-
-  <!-- ========================================================================= -->
-  <!-- INTERCEPTADOR LEVE (Apenas WebSockets, o Fetch é gerido pelo TS)          -->
-  <!-- ========================================================================= -->
-  <script>
-      // Garante que o movimento dos bonecos encontra o servidor Oracle
-      const OriginalWebSocket = window.WebSocket;
-      window.WebSocket = function(url, protocols) {
-          if (typeof url === 'string' && url.includes('/live') && !url.includes('api.laricks.com.br')) {
-              console.log('🔌 WebSocket Redirecionado com segurança para a Oracle');
-              return new OriginalWebSocket('wss://api.laricks.com.br/live', protocols);
-          }
-          return new OriginalWebSocket(url, protocols);
-      };
-      window.WebSocket.prototype = OriginalWebSocket.prototype;
-  </script>
 
   <!-- Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Usamos o Babel Standalone de forma padrão -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="config.js"></script>
@@ -45,26 +30,16 @@
     ::-webkit-scrollbar-track { background: #1e293b; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-    
-    /* Configuração âncora para a Praça (Livre para expandir e sem bloqueio de cliques) */
-    #townsquare-target {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        z-index: 45;
-    }
   </style>
 </head>
 <body>
 
   <!-- ========================================================================= -->
-  <!-- APLICAÇÃO REACT (Isolada do Babel Automático)                             -->
-  <!-- Usando type="text/plain", o Babel Standalone nunca vai interferir         -->
+  <!-- APLICAÇÃO REACT (Biblioteca de Jogos Limpa e Segura)                      -->
   <!-- ========================================================================= -->
   <div id="root"></div>
 
-  <script id="react-source" type="text/plain">
+  <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
     
     let API_BASE_URL;
@@ -217,7 +192,7 @@
                 </div>
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
-                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
                 <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
               </div>
             </form>
@@ -331,53 +306,36 @@
         </div>
       );
     }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
   </script>
 
   <!-- ========================================================================= -->
-  <!-- 3. COMPILADOR E INJETOR MANUAL (Bypass Absoluto do Babel)                 -->
-  <!-- ========================================================================= -->
-  <script>
-    // Este script compila o React manualmente e injeta-o. 
-    // Como NUNCA usámos <script type="text/babel"> livre no HTML, 
-    // o Babel nunca inicia a sua espionagem e nunca cracha!
-    window.addEventListener('DOMContentLoaded', () => {
-        try {
-            const reactCode = document.getElementById('react-source').textContent;
-            // Compila o código
-            const compiledCode = Babel.transform(reactCode, { presets: ['react'] }).code;
-            
-            // Injeta o código compilado na página
-            const script = document.createElement('script');
-            script.textContent = compiledCode + "\nconst root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);";
-            document.body.appendChild(script);
-            console.log('✅ React renderizado com segurança.');
-        } catch (error) {
-            console.error('❌ Erro na compilação do React:', error);
-        }
-    });
-  </script>
-
-  <!-- ========================================================================= -->
-  <!-- 4. CARREGAMENTO DO TOWNSQUARE (Dinâmico e Sem Restrições)                 -->
+  <!-- CARREGADOR NATIVO DO TOWNSQUARE (Sem Interceptadores e Sem Crash)         -->
   <!-- ========================================================================= -->
   
   <div id="townsquare-target"></div>
 
-  <script type="module">
-    import { mountTownSquare } from '/townsquare.mjs';
-    
-    // Passamos a URL correta diretamente à biblioteca!
-    // A biblioteca trata das chamadas fetch e websocket internamente.
-    setTimeout(() => {
-        const rootElem = document.getElementById('townsquare-target');
-        if (rootElem) {
-            mountTownSquare(rootElem, { 
-                server: 'https://api.laricks.com.br', 
-                room: 'laricks-biblioteca' 
-            });
-            console.log('🏰 TownSquare carregado de forma nativa e sem restrições!');
-        }
-    }, 1000);
+  <script>
+    // Usamos um script puro. O Babel Standalone ignora isto completamente!
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            var target = document.getElementById('townsquare-target');
+            if (target) {
+                // A função nativa resolve TUDO (fetch e WebSockets) usando a propriedade 'server'
+                // Construímos o import dinâmico dentro de uma Function para não despertar o Babel.
+                var loadTS = new Function("rootElem", 
+                    "import('/townsquare.mjs').then(function(m) { " +
+                    "   m.mountTownSquare(rootElem, { server: 'https://api.laricks.com.br', room: 'laricks-biblioteca' }); " +
+                    "   console.log('🏰 TownSquare iniciado nativamente e em pleno funcionamento!'); " +
+                    "}).catch(console.error);"
+                );
+                loadTS(target);
+            }
+        }, 1000);
+    });
   </script>
 
 </body>
