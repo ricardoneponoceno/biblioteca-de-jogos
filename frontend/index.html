@@ -5,56 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Laricks Biblioteca de Jogos</title>
   
+  <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
+
   <!-- ========================================================================= -->
-  <!-- 1. OS INTERCEPTADORES SUPREMOS (TOWNSQUARE BYPASS)                        -->
+  <!-- 1. CARREGAMENTO DOS ESTILOS DO TOWNSQUARE (Direto da Vercel)              -->
+  <!-- ========================================================================= -->
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/widget.css">
+
+  <!-- ========================================================================= -->
+  <!-- 2. INTERCEPTADOR MÁGICO (Apenas para WebSockets e Ações do Avatar)        -->
   <!-- ========================================================================= -->
   <script>
-      // Garante a URL base correta
-      let BASE_URL = window.API_BASE_URL;
-      if (!BASE_URL) {
-          const hostname = window.location.hostname;
-          const isLocal = hostname === 'localhost' || hostname.startsWith('192.168.') || hostname.startsWith('172.') || hostname.startsWith('10.');
-          BASE_URL = isLocal ? `${window.location.protocol}//${hostname}:3000` : 'https://api.laricks.com.br';
-      }
-      window.TOWNSQUARE_BASE_URL = BASE_URL;
-
-      // A. Interceptador de WebSockets (Movimentos em tempo real)
+      // A. Interceptador de WebSockets (Movimentos do Boneco)
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
           if (typeof url === 'string' && url.includes('/live') && !url.includes('api.laricks.com.br')) {
-              const urlObj = new URL(url, window.location.href);
-              const baseUrlObj = new URL(window.TOWNSQUARE_BASE_URL);
-              urlObj.host = baseUrlObj.host;
-              urlObj.protocol = baseUrlObj.protocol === 'https:' ? 'wss:' : 'ws:';
-              console.log('🔌 WebSocket Intercetado e Redirecionado:', urlObj.toString());
+              const urlObj = new URL(url, window.location.origin);
+              urlObj.host = 'api.laricks.com.br';
+              urlObj.protocol = 'wss:';
+              console.log('🔌 Conexão de Avatar Redirecionada:', urlObj.toString());
               return new OriginalWebSocket(urlObj.toString(), protocols);
           }
           return new OriginalWebSocket(url, protocols);
       };
       window.WebSocket.prototype = OriginalWebSocket.prototype;
 
-      // B. Interceptador de Fetch (Chat, Sentar e Ações)
-      // Modificado para captar de forma robusta qualquer formato de URL
+      // B. Interceptador de Fetch (Chat, Sentar e Interações)
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
           let [resource, config] = args;
           
-          let urlStr = '';
-          if (typeof resource === 'string') urlStr = resource;
-          else if (resource instanceof Request) urlStr = resource.url;
-          else if (resource instanceof URL) urlStr = resource.toString();
+          let urlStr = typeof resource === 'string' ? resource : (resource instanceof Request ? resource.url : resource.toString());
 
           try {
-              const absoluteUrl = new URL(urlStr, window.location.href);
-              const tsKeywords = ['/chat', '/action', '/state', '/api/'];
+              const absoluteUrl = new URL(urlStr, window.location.origin);
+              // Interceptamos APENAS as ações. As imagens (nuvens) continuam na Vercel!
+              const tsApiPaths = ['/chat', '/action', '/state'];
               
-              // Se a requisição tentar ir para a Vercel e for do TownSquare...
-              if (absoluteUrl.hostname === window.location.hostname && tsKeywords.some(kw => absoluteUrl.pathname.includes(kw))) {
-                  // ...Forçamos a ligação à Oracle!
-                  absoluteUrl.host = new URL(window.TOWNSQUARE_BASE_URL).host;
-                  absoluteUrl.protocol = new URL(window.TOWNSQUARE_BASE_URL).protocol;
-                  
-                  console.log('📡 Ação do TS (Sentar/Falar) Intercetada e Redirecionada:', absoluteUrl.toString());
+              if (absoluteUrl.hostname === window.location.hostname && tsApiPaths.some(p => absoluteUrl.pathname.startsWith(p))) {
+                  absoluteUrl.hostname = 'api.laricks.com.br';
+                  absoluteUrl.protocol = 'https:';
                   
                   if (resource instanceof Request) {
                       resource = new Request(absoluteUrl.toString(), resource);
@@ -62,30 +53,18 @@
                       resource = absoluteUrl.toString();
                   }
               }
-          } catch (e) {
-              // Ignora falhas de conversão de URL
-          }
+          } catch (e) {}
           
           return originalFetch(resource, config);
       };
-
-      // Carrega o CSS do TownSquare a partir da Oracle
-      ['/tokens.css', '/widget.css'].forEach(path => {
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = window.TOWNSQUARE_BASE_URL + path;
-          document.head.appendChild(link);
-      });
   </script>
 
-  <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   
-  <!-- Carrega o ficheiro de configuração antes do script da aplicação -->
   <script src="config.js"></script>
 
   <style>
@@ -107,48 +86,33 @@
       align-items: center;
       z-index: 50;
     }
-    .genre-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 8px;
-      align-content: flex-start; 
-    }
-    .genre-tag {
-      background-color: rgba(255, 255, 255, 0.1);
-      color: #e2e8f0;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.70rem;
-      font-weight: 500;
-      white-space: nowrap; 
-    }
-    
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #1e293b; 
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #475569; 
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #64748b; 
-    }
+    .genre-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; align-content: flex-start; }
+    .genre-tag { background-color: rgba(255, 255, 255, 0.1); color: #e2e8f0; padding: 2px 8px; border-radius: 4px; font-size: 0.70rem; font-weight: 500; white-space: nowrap; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
   </style>
 </head>
 <body>
 
-  <!-- ========================================================================= -->
-  <!-- 2. APLICAÇÃO REACT (Biblioteca de Jogos Padrão, Segura)                   -->
-  <!-- ========================================================================= -->
   <div id="root"></div>
 
+  <!-- ========================================================================= -->
+  <!-- 3. APLICAÇÃO REACT (Biblioteca de Jogos)                                  -->
+  <!-- ========================================================================= -->
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
+    
+    let API_BASE_URL;
+    const hostname = window.location.hostname;
+    const isLocalNetwork = hostname === 'localhost' || hostname.startsWith('192.168.') || hostname.startsWith('172.') || hostname.startsWith('10.');
+
+    if (isLocalNetwork) {
+      API_BASE_URL = `${window.location.protocol}//${hostname}:3000`;
+    } else {
+      API_BASE_URL = 'https://api.laricks.com.br';
+    }
     
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
@@ -163,53 +127,30 @@
       return (
         <div className="bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col justify-between transform hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 group h-full border border-gray-700">
           <div className="relative overflow-hidden aspect-[3/4]">
-            <img 
-              src={jogo.capa} 
-              alt={`Capa do jogo ${jogo.titulo}`} 
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/600x800/1e293b/ffffff?text=Sem+Capa'; }}
-            />
-            
+            <img src={jogo.capa} alt={jogo.titulo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/600x800/1e293b/ffffff?text=Sem+Capa'; }} />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-60"></div>
-
             {isAdmin && (
               <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
-                  <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
-                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg></button>
               </div>
             )}
           </div>
-
           <div className="p-2 sm:p-4 flex flex-col flex-grow">
             <h2 className="text-sm sm:text-lg font-bold text-white leading-tight mb-1 line-clamp-2" title={jogo.titulo}>{jogo.titulo}</h2>
             <p className="text-[10px] sm:text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2 sm:mb-3">{jogo.plataforma}</p>
-            
             {jogo.generos && jogo.generos.length > 0 && (
-              <div className="genre-list mb-2 sm:mb-4 flex-grow">
-                {jogo.generos.slice(0, 3).map(genero => ( 
-                  <span key={genero} className="genre-tag">{genero}</span>
-                ))}
-                {jogo.generos.length > 3 && <span className="genre-tag">+{jogo.generos.length - 3}</span>}
+              <div className="genre-list mb-2 sm:mb-4">
+                {jogo.generos.slice(0, 2).map(genero => <span key={genero} className="genre-tag">{genero}</span>)}
+                {jogo.generos.length > 2 && <span className="genre-tag">+{jogo.generos.length - 2}</span>}
               </div>
             )}
-
             <div className="flex justify-between items-center pt-2 sm:pt-3 border-t border-gray-700 mt-auto">
               <div className="flex items-center text-gray-400 text-[10px] sm:text-xs" title="Tempo de Jogo">
                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                  {formatarGameplay(jogo.gameplay_minutos)}
               </div>
-              <span className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md ${
-                  jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-gray-700 text-gray-300' : 
-                  jogo.metacritic >= 75 ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 
-                  jogo.metacritic >= 50 ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30' : 
-                  'bg-red-600/20 text-red-400 border border-red-600/30'
-                }`}>
-                {jogo.metacritic || '-'}
-              </span>
+              <span className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md ${jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-gray-700 text-gray-300' : jogo.metacritic >= 75 ? 'bg-green-600/20 text-green-400 border border-green-600/30' : jogo.metacritic >= 50 ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30' : 'bg-red-600/20 text-red-400 border border-red-600/30'}`}>{jogo.metacritic || '-'}</span>
             </div>
           </div>
         </div>
@@ -217,106 +158,50 @@
     }
 
     function GameFormModal({ jogo, onSave, onCancel, apiConfig, allGeneros }) {
-      const [formData, setFormData] = useState({
-        titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
-      });
+      const [formData, setFormData] = useState({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: [] });
       const [isSearching, setIsSearching] = useState(false);
-      
       const titleInputRef = useRef(null);
 
       useEffect(() => {
         if (jogo) {
           const lancamentoFormatado = jogo.lancamento ? new Date(jogo.lancamento).toISOString().split('T')[0] : '';
           const gameplayEmHoras = jogo.gameplay_minutos ? Math.round(jogo.gameplay_minutos / 60) : '';
-          const generoIds = allGeneros
-            .filter(g => jogo.generos && jogo.generos.includes(g.name))
-            .map(g => g.id);
+          const generoIds = allGeneros.filter(g => jogo.generos && jogo.generos.includes(g.name)).map(g => g.id);
           setFormData({ ...jogo, lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras, generos: generoIds });
         } else {
           setFormData({ titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: [] });
         }
       }, [jogo, allGeneros]);
       
-      useEffect(() => {
-        setTimeout(() => {
-          if (titleInputRef.current) {
-            titleInputRef.current.focus();
-          }
-        }, 100);
-      }, []);
+      useEffect(() => { setTimeout(() => { if (titleInputRef.current) titleInputRef.current.focus(); }, 100); }, []);
 
       useEffect(() => {
-        if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo) || !apiConfig.hltbApiUrl) {
-          setIsSearching(false);
-          return;
-        }
-
+        if (formData.titulo.length < 3 || (jogo && jogo.titulo === formData.titulo) || !apiConfig.hltbApiUrl) { setIsSearching(false); return; }
         setIsSearching(true);
         const handler = setTimeout(async () => {
           const title = formData.titulo;
-          
           try {
             const hltbResponse = await axios.get(`${apiConfig.hltbApiUrl}/${encodeURIComponent(title)}`);
             if (hltbResponse.data && hltbResponse.data.times) {
               const { main_story, main_extra } = hltbResponse.data.times;
-              let averageGameplay = '';
-
-              if (typeof main_story === 'number' && typeof main_extra === 'number') {
-                averageGameplay = Math.round((main_story + main_extra) / 2);
-              } else if (typeof main_story === 'number') {
-                averageGameplay = Math.round(main_story);
-              }
-
-              setFormData(prev => ({
-                ...prev,
-                gameplay_horas: prev.gameplay_horas || averageGameplay || '',
-                capa: prev.capa || hltbResponse.data.image_url || ''
-              }));
+              let avg = '';
+              if (typeof main_story === 'number' && typeof main_extra === 'number') avg = Math.round((main_story + main_extra) / 2);
+              else if (typeof main_story === 'number') avg = Math.round(main_story);
+              setFormData(p => ({ ...p, gameplay_horas: p.gameplay_horas || avg || '', capa: p.capa || hltbResponse.data.image_url || '' }));
             }
-          } catch (error) {
-            console.warn(`Não foi possível encontrar "${title}" no HLTB.`, error.message);
-          }
-
+          } catch (e) {}
           try {
             const rawgResponse = await axios.get(`${apiConfig.rawgApiUrl}/${encodeURIComponent(title)}`);
-            if (rawgResponse.data) {
-              setFormData(prev => ({
-                ...prev,
-                metacritic: prev.metacritic || rawgResponse.data.metacritic || '',
-                lancamento: prev.lancamento || rawgResponse.data.released || ''
-              }));
-            }
-          } catch (error) {
-            console.warn(`Não foi possível encontrar "${title}" no RAWG.`, error.message);
-          }
-
+            if (rawgResponse.data) setFormData(p => ({ ...p, metacritic: p.metacritic || rawgResponse.data.metacritic || '', lancamento: p.lancamento || rawgResponse.data.released || '' }));
+          } catch (e) {}
           setIsSearching(false);
         }, 1000);
-
-        return () => {
-          clearTimeout(handler);
-        };
+        return () => clearTimeout(handler);
       }, [formData.titulo, apiConfig]);
 
-
-      const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-      };
-
-      const handleGeneroChange = (generoId) => {
-        setFormData(prev => {
-          const newGeneros = prev.generos.includes(generoId)
-            ? prev.generos.filter(id => id !== generoId)
-            : [...prev.generos, generoId];
-          return { ...prev, generos: newGeneros };
-        });
-      };
-
-      const handleSubmit = (e) => {
-        e.preventDefault();
-        onSave(formData);
-      };
+      const handleChange = (e) => setFormData(p => ({ ...p, [e.target.name]: e.target.value }));
+      const handleGeneroChange = (gId) => setFormData(p => ({ ...p, generos: p.generos.includes(gId) ? p.generos.filter(id => id !== gId) : [...p.generos, gId] }));
+      const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
 
       return (
         <div className="modal-backdrop p-4">
@@ -324,95 +209,53 @@
             <form onSubmit={handleSubmit} className="flex flex-col h-full">
               <div className="p-6 overflow-y-auto flex-grow">
                 <h2 className="text-2xl font-bold mb-6 text-white border-b border-gray-700 pb-2">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
                   <div className="md:col-span-2 space-y-2">
-                    <label htmlFor="titulo" className="flex items-center justify-between text-sm font-semibold text-gray-300">
-                      <span>Título</span>
-                      {isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}
-                    </label>
-                    <input 
-                      ref={titleInputRef}
-                      id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required 
-                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all" 
-                    />
+                    <label className="flex items-center justify-between text-sm font-semibold text-gray-300"><span>Título</span>{isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}</label>
+                    <input ref={titleInputRef} name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
-
                   <div className="space-y-2">
-                    <label htmlFor="plataforma" className="block text-sm font-semibold text-gray-300">Plataforma</label>
-                    <select
-                        id="plataforma"
-                        name="plataforma"
-                        value={formData.plataforma}
-                        onChange={handleChange}
-                        required
-                        className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                    >
+                    <label className="block text-sm font-semibold text-gray-300">Plataforma</label>
+                    <select name="plataforma" value={formData.plataforma} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none">
                         <option value="" disabled>Selecione...</option>
-                        {PLATAFORMAS.map(plataforma => (
-                            <option key={plataforma} value={plataforma}>{plataforma}</option>
-                        ))}
+                        {PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
-                   
                    <div className="space-y-2">
-                    <label htmlFor="lancamento" className="block text-sm font-semibold text-gray-300">Lançamento</label>
-                    <input id="lancamento" name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" 
-                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                    />
+                    <label className="block text-sm font-semibold text-gray-300">Lançamento</label>
+                    <input name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
-
                   <div className="space-y-2">
-                    <label htmlFor="gameplay_horas" className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
-                    <input id="gameplay_horas" name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" placeholder="Ex: 120" 
-                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                    />
+                    <label className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
+                    <input name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
-
                   <div className="space-y-2">
-                    <label htmlFor="metacritic" className="block text-sm font-semibold text-gray-300">Metacritic</label>
-                    <input id="metacritic" name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" placeholder="0-100" 
-                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                    />
+                    <label className="block text-sm font-semibold text-gray-300">Metacritic</label>
+                    <input name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
-
                   <div className="md:col-span-2 space-y-2">
-                    <label htmlFor="capa" className="block text-sm font-semibold text-gray-300">URL da Capa (Vertical/Poster)</label>
+                    <label className="block text-sm font-semibold text-gray-300">URL da Capa</label>
                     <div className="flex gap-4">
-                      <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." 
-                        className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                      />
-                      {formData.capa && (
-                        <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600">
-                           <img src={formData.capa} className="w-full h-full object-cover" alt="Preview" onError={(e) => e.target.style.display='none'} />
-                        </div>
-                      )}
+                      <input name="capa" value={formData.capa} onChange={handleChange} className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                      {formData.capa && <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600"><img src={formData.capa} className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} /></div>}
                     </div>
                   </div>
-
                   <div className="md:col-span-2 space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Gêneros</label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-900/50 p-3 rounded-lg border border-gray-600 max-h-32 overflow-y-auto">
-                      {allGeneros.map(genero => (
-                        <label key={genero.id} className="flex items-center space-x-2 cursor-pointer text-sm hover:text-white text-gray-300 transition-colors">
-                          <input
-                            type="checkbox"
-                            className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-blue-500"
-                            checked={formData.generos.includes(genero.id)}
-                            onChange={() => handleGeneroChange(genero.id)}
-                          />
-                          <span>{genero.name}</span>
+                      {allGeneros.map(g => (
+                        <label key={g.id} className="flex items-center space-x-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                          <input type="checkbox" className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 text-blue-500" checked={formData.generos.includes(g.id)} onChange={() => handleGeneroChange(g.id)} />
+                          <span>{g.name}</span>
                         </label>
                       ))}
                     </div>
                   </div>
                 </div>
               </div>
-              
               <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
-                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
-                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg">Salvar</button>
               </div>
             </form>
           </div>
@@ -427,244 +270,112 @@
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [apiConfig, setApiConfig] = useState({});
-      
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingGame, setEditingGame] = useState(null);
       const [isAdmin, setIsAdmin] = useState(false);
-
-      const [filters, setFilters] = useState({
-        titulo: '',
-        plataforma: '',
-        genero: '',
-        gameplay_min: '',
-        gameplay_max: '',
-        metacritic_min: '',
-        metacritic_max: ''
-      });
+      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
 
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const mode = params.get('mode');
-
-        if (mode === 'admin') {
+        if (params.get('mode') === 'admin') {
             localStorage.setItem('gameLibAdmin', 'true');
             setIsAdmin(true);
             window.history.replaceState({}, document.title, window.location.pathname);
-        } else {
-            const storedAdmin = localStorage.getItem('gameLibAdmin');
-            if (storedAdmin === 'true') {
-                setIsAdmin(true);
-            }
+        } else if (localStorage.getItem('gameLibAdmin') === 'true') {
+            setIsAdmin(true);
         }
       }, []);
 
       useEffect(() => {
         const fetchInitialData = async () => {
             try {
-              if (typeof window.API_BASE_URL === 'undefined') {
-                setTimeout(fetchInitialData, 100);
-                return;
-              }
-              const [configRes, generosRes] = await Promise.all([
-                axios.get(`${window.API_BASE_URL}/config`),
-                axios.get(`${window.API_BASE_URL}/generos`)
-              ]);
-              setApiConfig(configRes.data);
-              setAllGeneros(generosRes.data);
-            } catch (err) {
-                console.error("Não foi possível carregar os dados iniciais", err);
-                setError("Não foi possível carregar as configurações. O backend está rodando?");
-            }
+              if (typeof API_BASE_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
+              const [cRes, gRes] = await Promise.all([axios.get(`${API_BASE_URL}/config`), axios.get(`${API_BASE_URL}/generos`)]);
+              setApiConfig(cRes.data); setAllGeneros(gRes.data);
+            } catch (err) { setError("Falha ao carregar configurações do servidor."); }
         };
         fetchInitialData();
       }, []);
 
-      const fetchJogos = useCallback(async (background = false) => {
+      const fetchJogos = useCallback(async (bg = false) => {
         try {
-          if (!window.API_BASE_URL) return;
-          if (!background) setLoading(true);
+          if (!API_BASE_URL) return;
+          if (!bg) setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) {
-            if (filters[key]) {
-              if (key === 'gameplay_min' || key === 'gameplay_max') {
-                  params.append(key, filters[key] * 60);
-              } else {
-                  params.append(key, filters[key]);
-              }
-            }
+            if (filters[key]) params.append(key, (key.includes('gameplay') ? filters[key] * 60 : filters[key]));
           }
-          const response = await axios.get(`${window.API_BASE_URL}/jogos?${params.toString()}`);
+          const response = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
           setJogos(response.data.filteredGames);
           setTotalJogos(response.data.totalGames);
           setError(null);
-        } catch (err) {
-          console.error("Erro ao procurar jogos:", err);
-          setError("Não foi possível carregar os jogos. O backend está rodando?");
-        } finally {
-          if (!background) setLoading(false);
-        }
+        } catch (err) { setError("Falha ao carregar jogos."); } finally { if (!bg) setLoading(false); }
       }, [filters]);
 
-      useEffect(() => {
-        const handler = setTimeout(() => {
-            fetchJogos();
-        }, 500);
-        return () => {
-            clearTimeout(handler);
-        };
-      }, [filters, fetchJogos]);
+      useEffect(() => { const h = setTimeout(() => fetchJogos(), 500); return () => clearTimeout(h); }, [filters, fetchJogos]);
       
-      const handleFilterChange = (e) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
-      };
-
-      const handleOpenModal = (jogo = null) => {
-        setEditingGame(jogo);
-        setIsModalOpen(true);
-      };
-
-      const handleCloseModal = () => {
-        setIsModalOpen(false);
-        setEditingGame(null);
-      };
+      const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
+      const handleOpenModal = (jogo = null) => { setEditingGame(jogo); setIsModalOpen(true); };
+      const handleCloseModal = () => { setIsModalOpen(false); setEditingGame(null); };
 
       const handleSaveGame = async (gameData) => {
-        const dataToSend = {
-          ...gameData,
-          gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10) * 60 : null,
-          metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null,
-        };
+        const dataToSend = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10) * 60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
         delete dataToSend.gameplay_horas;
-        
         try {
-          if (editingGame) {
-            await axios.put(`${window.API_BASE_URL}/jogos/${editingGame.id}`, dataToSend);
-          } else {
-            await axios.post(`${window.API_BASE_URL}/jogos`, dataToSend);
-          }
-          handleCloseModal();
-          fetchJogos(true); // Chama em background para não resetar o scroll
-        } catch (err) {
-          console.error("Erro ao salvar jogo:", err);
-          if (err.response && err.response.data && err.response.data.error) {
-            alert(err.response.data.error);
-          } else {
-            alert("Falha ao salvar jogo. Verifique o console para mais detalhes.");
-          }
-        }
+          editingGame ? await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, dataToSend) : await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
+          handleCloseModal(); fetchJogos(true);
+        } catch (err) { alert(err.response?.data?.error || "Falha ao salvar jogo."); }
       };
 
       const handleDeleteGame = async (jogo) => {
-        if (window.confirm(`Tem certeza que deseja deletar "${jogo.titulo}"?`)) {
-          try {
-            await axios.delete(`${window.API_BASE_URL}/jogos/${jogo.id}`);
-            fetchJogos(true); // Chama em background para não resetar o scroll
-          } catch (err) {
-            console.error("Erro ao deletar jogo:", err);
-            alert("Falha ao deletar jogo.");
-          }
+        if (window.confirm(`Deletar "${jogo.titulo}"?`)) {
+          try { await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Falha ao deletar."); }
         }
       };
 
-      const hasFilters = Object.values(filters).some(value => value !== '');
+      const hasFilters = Object.values(filters).some(v => v !== '');
 
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
       return (
-        <div className="container mx-auto p-4 sm:p-6 lg:p-8 relative z-10 pb-[250px]">
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center sm:text-left">
               <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
               <p className="text-gray-400 mt-2">
-                {hasFilters ? (
-                  <>
-                    Exibindo <span className="font-bold text-cyan-400">{jogos.length}</span> de <span className="font-bold text-cyan-400">{totalJogos}</span> jogos.
-                  </>
-                ) : (
-                  <>
-                    Atualmente com <span className="font-bold text-cyan-400">{totalJogos}</span> jogos na sua coleção.
-                  </>
-                )}
+                {hasFilters ? <>Exibindo <span className="text-cyan-400">{jogos.length}</span> de <span className="text-cyan-400">{totalJogos}</span> jogos.</> : <>Com <span className="text-cyan-400">{totalJogos}</span> jogos na coleção.</>}
               </p>
             </div>
-            {isAdmin && (
-                <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">
-                  Adicionar Jogo
-                </button>
-            )}
+            {isAdmin && <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">Adicionar Jogo</button>}
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-              <select 
-                name="plataforma" 
-                value={filters.plataforma} 
-                onChange={handleFilterChange} 
-                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
-              >
-                <option value="">Todas as Plataformas</option>
-                {PLATAFORMAS.map(plataforma => (
-                  <option key={plataforma} value={plataforma}>
-                    {plataforma}
-                  </option>
-                ))}
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+                <option value="">Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select 
-                name="genero" 
-                value={filters.genero} 
-                onChange={handleFilterChange} 
-                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
-              >
-                <option value="">Todos os Gêneros</option>
-                {allGeneros.map(genero => (
-                  <option key={genero.id} value={genero.name}>
-                    {genero.name}
-                  </option>
-                ))}
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+                <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
               </select>
-              <div className="flex items-center gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <div className="flex gap-2">
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
-              <div className="flex items-center gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <div className="flex gap-2">
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex justify-center mt-20">
-               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
+          {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-              {jogos.length > 0 ? (
-                jogos.map(jogo => (
-                  <GameCard key={jogo.id} jogo={jogo} onEdit={handleOpenModal} onDelete={handleDeleteGame} isAdmin={isAdmin} />
-                ))
-              ) : (
-                <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500">
-                   <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                   <p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p>
-                </div>
-              )}
+              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={handleOpenModal} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full text-center text-gray-500 mt-10"><p className="text-xl">Nenhum jogo encontrado.</p></div>}
             </div>
           )}
 
-          {isModalOpen && (
-            <GameFormModal 
-              jogo={editingGame} 
-              onSave={handleSaveGame} 
-              onCancel={handleCloseModal}
-              apiConfig={apiConfig}
-              allGeneros={allGeneros}
-            />
-          )}
+          {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={handleCloseModal} apiConfig={apiConfig} allGeneros={allGeneros} />}
         </div>
       );
     }
@@ -675,50 +386,21 @@
   </script>
 
   <!-- ========================================================================= -->
-  <!-- 3. INJEÇÃO DO TOWNSQUARE (Invisível ao Babel, Com Suporte a Expand)       -->
+  <!-- 4. TOWNSQUARE (Injeção Nativa, Livre do Babel, CSS Livre)                 -->
   <!-- ========================================================================= -->
   
-  <!-- Contentor base. Não forçamos altura ou overflow aqui para que o TownSquare possa expandir livremente! -->
-  <div id="townsquare-wrapper"></div>
+  <!-- O TownSquare utiliza o seu próprio CSS para tratar do layout. 
+       Ao deixar esta div "solta", o botão Expandir funcionará perfeitamente! -->
+  <div id="townsquare"></div>
 
-  <script>
-    window.addEventListener('DOMContentLoaded', () => {
-        // Aguarda 1 segundo para garantir que o React renderizou o DOM principal
-        setTimeout(() => {
-            const rootElement = document.getElementById('townsquare-wrapper');
-            if (rootElement) {
-                // Configura o contentor para flutuar sobre a página, sem bloquear cliques no fundo
-                rootElement.style.position = 'fixed';
-                rootElement.style.bottom = '0';
-                rootElement.style.left = '0';
-                rootElement.style.width = '100%';
-                rootElement.style.zIndex = '40';
-                rootElement.style.pointerEvents = 'none';
-                
-                // Usamos import dinâmico dentro de uma tag script normal. 
-                // Isto funciona nativamente no navegador e é 100% ignorado pelo Babel!
-                import(window.TOWNSQUARE_BASE_URL + '/townsquare.mjs')
-                    .then((module) => {
-                        module.mountTownSquare(rootElement, { 
-                            server: window.TOWNSQUARE_BASE_URL, 
-                            room: 'laricks-biblioteca' 
-                        });
-                        
-                        // Após a montagem, restauramos a capacidade de clique APENAS nos elementos filhos.
-                        // Assim a praça fica clicável (para sentar, etc) mas o fundo transparente deixa clicar nos jogos.
-                        setTimeout(() => {
-                            Array.from(rootElement.children).forEach(child => {
-                                child.style.pointerEvents = 'auto';
-                            });
-                        }, 1000);
-                        
-                        console.log('🏰 TownSquare carregado e vivo de forma segura!');
-                    })
-                    .catch((err) => {
-                        console.error("❌ Erro ao carregar o TownSquare:", err);
-                    });
-            }
-        }, 1000);
+  <!-- Utilizamos module standard para que o Babel Standalone NÃO intercepte isto -->
+  <script type="module">
+    import { mountTownSquare } from '/townsquare.mjs';
+    
+    // Tenta montar passando o host da API, mas o nosso Interceptador lá em cima garante 100% de sucesso!
+    mountTownSquare(document.getElementById('townsquare'), { 
+        server: 'https://api.laricks.com.br', 
+        room: 'laricks-biblioteca' 
     });
   </script>
 
