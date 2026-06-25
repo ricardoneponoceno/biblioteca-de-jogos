@@ -6,82 +6,50 @@
   <title>Laricks Biblioteca de Jogos</title>
   
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
-
-  <!-- CSS DO TOWNSQUARE (Nativo do Vercel) -->
+  
+  <!-- CSS DO TOWNSQUARE -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
 
   <!-- ========================================================================= -->
-  <!-- A BLINDAGEM ABSOLUTA (Babel & Interceptadores)                            -->
+  <!-- INTERCEPTADOR BLINDADO (Garante o encaminhamento correto do tráfego)      -->
   <!-- ========================================================================= -->
   <script>
-      // 1. NEUTRALIZAR O BABEL (O Segredo para a Biblioteca não desaparecer)
-      // Colocamos uma "capa de invisibilidade" no MutationObserver. O Babel nunca verá os scripts do TownSquare!
-      const OrigObs = window.MutationObserver;
-      window.MutationObserver = function(cb) {
-          return new OrigObs(function(mutations, observer) {
-              const safeMutations = mutations.filter(m => {
-                  if (m.type === 'childList' && m.addedNodes.length > 0) {
-                      for (let i = 0; i < m.addedNodes.length; i++) {
-                          const node = m.addedNodes[i];
-                          if (node.tagName === 'SCRIPT' && (node.type === 'module' || (node.src && node.src.includes('townsquare')))) {
-                              return false; // Esconde o TownSquare do Babel!
-                          }
-                      }
-                  }
-                  return true;
-              });
-              if (safeMutations.length > 0) cb(safeMutations, observer);
-          });
-      };
-      window.MutationObserver.prototype = OrigObs.prototype;
+      const TS_DOMAIN = 'api.laricks.com.br';
 
-      // 2. CONFIGURAR A URL DA ORACLE DINAMICAMENTE
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.');
-      window.API_BASE_URL = isLocal ? window.location.protocol + '//' + window.location.hostname + ':3000' : 'https://api.laricks.com.br';
-      const oracleUrl = new URL(window.API_BASE_URL);
-
-      // 3. INTERCEPTAR WEBSOCKETS (Movimento e Avatares)
+      // 1. Intercepta WebSockets: Força WSS para a API (Movimento do boneco)
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
-          if (typeof url === 'string' && url.includes('/live') && !url.includes(oracleUrl.hostname)) {
-              try {
-                  const urlObj = new URL(url, window.location.origin);
-                  urlObj.hostname = oracleUrl.hostname;
-                  urlObj.protocol = oracleUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-                  urlObj.port = oracleUrl.port;
-                  console.log('🔌 WebSocket Ligado à Oracle:', urlObj.toString());
-                  return new OriginalWebSocket(urlObj.toString(), protocols);
-              } catch(e) {}
+          if (typeof url === 'string' && url.includes('/live') && !url.includes(TS_DOMAIN)) {
+              console.log('🔌 WebSocket Redirecionado para a Oracle');
+              return new OriginalWebSocket('wss://' + TS_DOMAIN + '/live', protocols);
           }
           return new OriginalWebSocket(url, protocols);
       };
       window.WebSocket.prototype = OriginalWebSocket.prototype;
 
-      // 4. INTERCEPTAR FETCH (Chat e Sentar)
+      // 2. Intercepta Fetch: Apanha ações (Chat/Sentar) e envia para a Oracle
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
           let [resource, config] = args;
           let urlStr = typeof resource === 'string' ? resource : (resource instanceof Request ? resource.url : resource.toString());
           
-          const tsPaths = ['/chat', '/action', '/state'];
-          try {
-              const urlObj = new URL(urlStr, window.location.origin);
-              if (urlObj.hostname === window.location.hostname && tsPaths.some(p => urlObj.pathname === p || urlObj.pathname.startsWith(p + '/'))) {
-                  urlObj.hostname = oracleUrl.hostname;
-                  urlObj.protocol = oracleUrl.protocol;
-                  urlObj.port = oracleUrl.port;
-                  
-                  if (resource instanceof Request) resource = new Request(urlObj.toString(), resource);
-                  else resource = urlObj.toString();
-                  console.log('📡 Ação (Chat/Sentar) enviada para a Oracle:', urlObj.toString());
-              }
-          } catch(e) {}
+          if (urlStr.includes('/chat') || urlStr.includes('/action') || urlStr.includes('/state')) {
+              try {
+                  const urlObj = new URL(urlStr, window.location.origin);
+                  if (!urlObj.hostname.includes(TS_DOMAIN)) {
+                      urlObj.protocol = 'https:';
+                      urlObj.hostname = TS_DOMAIN;
+                      urlObj.port = ''; 
+                      resource = (args[0] instanceof Request) ? new Request(urlObj.toString(), args[0]) : urlObj.toString();
+                      console.log('📡 Ação Fetch Redirecionada para a Oracle:', urlObj.toString());
+                  }
+              } catch(e) {}
+          }
           return originalFetch(resource, config);
       };
   </script>
 
-  <!-- Tailwind e Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -104,12 +72,23 @@
 <body>
 
   <!-- ========================================================================= -->
-  <!-- APLICAÇÃO REACT (Biblioteca de Jogos)                                     -->
+  <!-- APLICAÇÃO REACT (Biblioteca de Jogos Intacta)                             -->
   <!-- ========================================================================= -->
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
+    
+    let API_BASE_URL;
+    const hostname = window.location.hostname;
+    const isLocalNetwork = hostname === 'localhost' || hostname.startsWith('192.168.') || hostname.startsWith('172.') || hostname.startsWith('10.');
+
+    if (isLocalNetwork) {
+      API_BASE_URL = `${window.location.protocol}//${hostname}:3000`;
+    } else {
+      API_BASE_URL = 'https://api.laricks.com.br';
+    }
+    
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
     function GameCard({ jogo, onEdit, onDelete, isAdmin }) {
@@ -240,7 +219,7 @@
                     <label className="block text-sm font-semibold text-gray-300">Gêneros</label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-900/50 p-3 rounded-lg border border-gray-600 max-h-32 overflow-y-auto">
                       {allGeneros.map(g => (
-                        <label key={g.id} className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer hover:text-white">
+                        <label key={g.id} className="flex items-center space-x-2 cursor-pointer text-sm text-gray-300 hover:text-white">
                           <input type="checkbox" checked={formData.generos.includes(g.id)} onChange={() => handleGeneroChange(g.id)} className="form-checkbox bg-gray-700 border-gray-500 text-blue-500" />
                           <span>{g.name}</span>
                         </label>
@@ -285,8 +264,8 @@
       useEffect(() => {
         const fetchInitialData = async () => {
             try {
-              if (typeof window.API_BASE_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
-              const [cRes, gRes] = await Promise.all([axios.get(`${window.API_BASE_URL}/config`), axios.get(`${window.API_BASE_URL}/generos`)]);
+              if (typeof API_BASE_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
+              const [cRes, gRes] = await Promise.all([axios.get(`${API_BASE_URL}/config`), axios.get(`${API_BASE_URL}/generos`)]);
               setApiConfig(cRes.data); setAllGeneros(gRes.data);
             } catch (err) { setError("Falha na API."); }
         };
@@ -295,11 +274,11 @@
 
       const fetchJogos = useCallback(async (bg = false) => {
         try {
-          if (!window.API_BASE_URL) return;
+          if (!API_BASE_URL) return;
           if (!bg) setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) if (filters[key]) params.append(key, (key.includes('gameplay') ? filters[key]*60 : filters[key]));
-          const res = await axios.get(`${window.API_BASE_URL}/jogos?${params.toString()}`);
+          const res = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
           setJogos(res.data.filteredGames); setTotalJogos(res.data.totalGames); setError(null);
         } catch (err) { setError("Falha ao carregar jogos."); } finally { if (!bg) setLoading(false); }
       }, [filters]);
@@ -311,14 +290,14 @@
         const data = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10)*60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
         delete data.gameplay_horas;
         try {
-          editingGame ? await axios.put(`${window.API_BASE_URL}/jogos/${editingGame.id}`, data) : await axios.post(`${window.API_BASE_URL}/jogos`, data);
+          editingGame ? await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, data) : await axios.post(`${API_BASE_URL}/jogos`, data);
           setIsModalOpen(false); setEditingGame(null); fetchJogos(true);
         } catch (err) { alert(err.response?.data?.error || "Erro ao salvar."); }
       };
 
       const handleDeleteGame = async (jogo) => {
         if (window.confirm(`Excluir "${jogo.titulo}"?`)) {
-          try { await axios.delete(`${window.API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Erro ao excluir."); }
+          try { await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Erro ao excluir."); }
         }
       };
 
@@ -337,28 +316,29 @@
           <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
                 <option value="">Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
                 <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
               </select>
               <div className="flex gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
               <div className="flex gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
             </div>
           </div>
 
           {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p></div>}
+              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full text-center text-gray-500 mt-10"><p className="text-xl">Nenhum jogo encontrado.</p></div>}
             </div>
           )}
+
           {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={()=>{setIsModalOpen(false);setEditingGame(null);}} apiConfig={apiConfig} allGeneros={allGeneros} />}
         </div>
       );
@@ -370,27 +350,40 @@
   </script>
 
   <!-- ========================================================================= -->
-  <!-- INJEÇÃO DO TOWNSQUARE (Livre de Restrições)                               -->
+  <!-- CARREGADOR MÁGICO DO TOWNSQUARE (Bypass Absoluto do Babel)                -->
   <!-- ========================================================================= -->
   
   <div id="townsquare-target"></div>
 
   <script>
-    window.addEventListener('DOMContentLoaded', () => {
-        // Aguarda 1.5s para garantir que o React carregou a biblioteca
-        setTimeout(() => {
+    window.addEventListener('load', function() {
+        setTimeout(function() {
             const target = document.getElementById('townsquare-target');
             if (target) {
-                // Importa o script nativamente, o Babel não verá esta linha!
-                import('/townsquare.mjs').then(module => {
-                    module.mountTownSquare(target, { 
-                        server: window.location.origin, 
-                        room: 'laricks-biblioteca' 
-                    });
-                    console.log('🏰 TownSquare injetado livremente!');
-                }).catch(console.error);
+                target.style.position = 'fixed';
+                target.style.bottom = '0';
+                target.style.left = '0';
+                target.style.width = '100%';
+                target.style.zIndex = '45';
+                target.style.pointerEvents = 'none';
+
+                // O construtor Function cria o código de forma nativa e oculta a palavra-chave "import"
+                // do analisador estático do Babel Standalone, evitando o crash!
+                var loadTS = new Function("url", "rootElem", "roomName", 
+                    "return import(url).then(function(m) { " +
+                        "m.mountTownSquare(rootElem, { server: 'https://api.laricks.com.br', room: roomName }); " +
+                        "setTimeout(function() { " +
+                            "Array.from(rootElem.children).forEach(function(child) { " +
+                                "child.style.pointerEvents = 'auto'; " +
+                            "}); " +
+                        "}, 1500); " +
+                    "}).catch(console.error);"
+                );
+
+                loadTS('/townsquare.mjs', target, 'laricks-biblioteca');
+                console.log('🏰 TownSquare injetado livremente e invisível ao Babel!');
             }
-        }, 1500);
+        }, 1000);
     });
   </script>
 
