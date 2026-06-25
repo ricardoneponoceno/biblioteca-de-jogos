@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Laricks Biblioteca de Jogos</title>
+  <title>A Minha Biblioteca de Jogos</title>
   
-  <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/000000/game-controller.png">
   
-  <!-- CSS DO TOWNSQUARE (Carregado nativamente da Vercel) -->
+  <!-- CSS DO TOWNSQUARE (Carregado nativamente) -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
 
   <!-- ========================================================================= -->
-  <!-- INTERCEPTADOR BLINDADO (Garante que a Vercel fala com a Oracle)           -->
+  <!-- INTERCEPTADOR BLINDADO (Garante que o TownSquare fala com a Oracle)       -->
   <!-- ========================================================================= -->
   <script>
-      // 1. Intercepta WebSockets: Remove portas inválidas e força WSS para a API
+      // 1. Intercepta WebSockets: Força WSS puro para a API
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
           if (typeof url === 'string' && url.includes('/live')) {
@@ -35,11 +35,10 @@
           const tsApiPaths = ['/chat', '/action', '/state'];
           try {
               const urlObj = new URL(urlStr, window.location.origin);
-              // Se a requisição for para uma destas rotas vitais do TownSquare...
               if (tsApiPaths.some(p => urlObj.pathname === p || urlObj.pathname.startsWith(p + '/'))) {
                   urlObj.protocol = 'https:';
                   urlObj.hostname = 'api.laricks.com.br';
-                  urlObj.port = ''; // Remove qualquer porta (8443) residual
+                  urlObj.port = ''; 
                   
                   if (resource instanceof Request) {
                       resource = new Request(urlObj.toString(), resource);
@@ -71,6 +70,15 @@
     ::-webkit-scrollbar-track { background: #1e293b; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    
+    /* Configuração âncora para a Praça (Livre para expandir) */
+    #townsquare-target {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        z-index: 45;
+    }
   </style>
 </head>
 <body>
@@ -163,28 +171,23 @@
             const hltbResponse = await axios.get(`${apiConfig.hltbApiUrl}/${encodeURIComponent(title)}`);
             if (hltbResponse.data && hltbResponse.data.times) {
               const { main_story, main_extra } = hltbResponse.data.times;
-              let averageGameplay = '';
-              if (typeof main_story === 'number' && typeof main_extra === 'number') averageGameplay = Math.round((main_story + main_extra) / 2);
-              else if (typeof main_story === 'number') averageGameplay = Math.round(main_story);
-              setFormData(prev => ({ ...prev, gameplay_horas: prev.gameplay_horas || averageGameplay || '', capa: prev.capa || hltbResponse.data.image_url || '' }));
+              let avg = '';
+              if (typeof main_story === 'number' && typeof main_extra === 'number') avg = Math.round((main_story + main_extra) / 2);
+              else if (typeof main_story === 'number') avg = Math.round(main_story);
+              setFormData(p => ({ ...p, gameplay_horas: p.gameplay_horas || avg || '', capa: p.capa || hltbResponse.data.image_url || '' }));
             }
-          } catch (error) {}
+          } catch (e) {}
           try {
             const rawgResponse = await axios.get(`${apiConfig.rawgApiUrl}/${encodeURIComponent(title)}`);
-            if (rawgResponse.data) {
-              setFormData(prev => ({ ...prev, metacritic: prev.metacritic || rawgResponse.data.metacritic || '', lancamento: prev.lancamento || rawgResponse.data.released || '' }));
-            }
-          } catch (error) {}
+            if (rawgResponse.data) setFormData(p => ({ ...p, metacritic: p.metacritic || rawgResponse.data.metacritic || '', lancamento: p.lancamento || rawgResponse.data.released || '' }));
+          } catch (e) {}
           setIsSearching(false);
         }, 1000);
         return () => clearTimeout(handler);
       }, [formData.titulo, apiConfig]);
 
-      const handleChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-      const handleGeneroChange = (generoId) => setFormData(prev => {
-          const newGeneros = prev.generos.includes(generoId) ? prev.generos.filter(id => id !== generoId) : [...prev.generos, generoId];
-          return { ...prev, generos: newGeneros };
-      });
+      const handleChange = (e) => setFormData(p => ({ ...p, [e.target.name]: e.target.value }));
+      const handleGeneroChange = (gId) => setFormData(p => ({ ...p, generos: p.generos.includes(gId) ? p.generos.filter(id => id !== gId) : [...p.generos, gId] }));
       const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
 
       return (
@@ -195,42 +198,42 @@
                 <h2 className="text-2xl font-bold mb-6 text-white border-b border-gray-700 pb-2">{jogo ? 'Editar Jogo' : 'Adicionar Jogo'}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="md:col-span-2 space-y-2">
-                    <label htmlFor="titulo" className="flex items-center justify-between text-sm font-semibold text-gray-300"><span>Título</span>{isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}</label>
-                    <input ref={titleInputRef} id="titulo" name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all" />
+                    <label className="flex items-center justify-between text-sm font-semibold text-gray-300"><span>Título</span>{isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}</label>
+                    <input ref={titleInputRef} name="titulo" value={formData.titulo} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="plataforma" className="block text-sm font-semibold text-gray-300">Plataforma</label>
-                    <select id="plataforma" name="plataforma" value={formData.plataforma} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                    <label className="block text-sm font-semibold text-gray-300">Plataforma</label>
+                    <select name="plataforma" value={formData.plataforma} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none">
                         <option value="" disabled>Selecione...</option>
-                        {PLATAFORMAS.map(plataforma => <option key={plataforma} value={plataforma}>{plataforma}</option>)}
+                        {PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
                    <div className="space-y-2">
-                    <label htmlFor="lancamento" className="block text-sm font-semibold text-gray-300">Lançamento</label>
-                    <input id="lancamento" name="lancamento" value={formData.lancamento} onChange={handleChange} type="date" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                    <label className="block text-sm font-semibold text-gray-300">Lançamento</label>
+                    <input name="lancamento" type="date" value={formData.lancamento} onChange={handleChange} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="gameplay_horas" className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
-                    <input id="gameplay_horas" name="gameplay_horas" value={formData.gameplay_horas} onChange={handleChange} type="number" placeholder="Ex: 120" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                    <label className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
+                    <input name="gameplay_horas" type="number" value={formData.gameplay_horas} onChange={handleChange} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="metacritic" className="block text-sm font-semibold text-gray-300">Metacritic</label>
-                    <input id="metacritic" name="metacritic" value={formData.metacritic} onChange={handleChange} type="number" min="0" max="100" placeholder="0-100" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                    <label className="block text-sm font-semibold text-gray-300">Metacritic</label>
+                    <input name="metacritic" type="number" value={formData.metacritic} onChange={handleChange} min="0" max="100" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
                   </div>
                   <div className="md:col-span-2 space-y-2">
-                    <label htmlFor="capa" className="block text-sm font-semibold text-gray-300">URL da Capa</label>
+                    <label className="block text-sm font-semibold text-gray-300">URL da Capa</label>
                     <div className="flex gap-4">
-                      <input id="capa" name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
-                      {formData.capa && <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600"><img src={formData.capa} className="w-full h-full object-cover" alt="Preview" onError={(e) => e.target.style.display='none'} /></div>}
+                      <input name="capa" value={formData.capa} onChange={handleChange} className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                      {formData.capa && <img src={formData.capa} className="w-12 h-16 object-cover rounded border border-gray-600" alt="Preview" onError={(e)=>e.target.style.display='none'} />}
                     </div>
                   </div>
                   <div className="md:col-span-2 space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Gêneros</label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-900/50 p-3 rounded-lg border border-gray-600 max-h-32 overflow-y-auto">
-                      {allGeneros.map(genero => (
-                        <label key={genero.id} className="flex items-center space-x-2 cursor-pointer text-sm hover:text-white text-gray-300 transition-colors">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-blue-500" checked={formData.generos.includes(genero.id)} onChange={() => handleGeneroChange(genero.id)} />
-                          <span>{genero.name}</span>
+                      {allGeneros.map(g => (
+                        <label key={g.id} className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                          <input type="checkbox" checked={formData.generos.includes(g.id)} onChange={() => handleGeneroChange(g.id)} className="form-checkbox bg-gray-700 border-gray-500 text-blue-500" />
+                          <span>{g.name}</span>
                         </label>
                       ))}
                     </div>
@@ -261,8 +264,7 @@
 
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const mode = params.get('mode');
-        if (mode === 'admin') {
+        if (params.get('mode') === 'admin') {
             localStorage.setItem('gameLibAdmin', 'true');
             setIsAdmin(true);
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -275,121 +277,98 @@
         const fetchInitialData = async () => {
             try {
               if (typeof API_BASE_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
-              const [configRes, generosRes] = await Promise.all([axios.get(`${API_BASE_URL}/config`), axios.get(`${API_BASE_URL}/generos`)]);
-              setApiConfig(configRes.data); setAllGeneros(generosRes.data);
-            } catch (err) {}
+              const [cRes, gRes] = await Promise.all([axios.get(`${API_BASE_URL}/config`), axios.get(`${API_BASE_URL}/generos`)]);
+              setApiConfig(cRes.data); setAllGeneros(gRes.data);
+            } catch (err) { setError("Falha na API."); }
         };
         fetchInitialData();
       }, []);
 
-      const fetchJogos = useCallback(async (background = false) => {
+      const fetchJogos = useCallback(async (bg = false) => {
         try {
           if (!API_BASE_URL) return;
-          if (!background) setLoading(true);
+          if (!bg) setLoading(true);
           const params = new URLSearchParams();
-          for (const key in filters) if (filters[key]) params.append(key, key.includes('gameplay') ? filters[key] * 60 : filters[key]);
-          const response = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
-          setJogos(response.data.filteredGames); setTotalJogos(response.data.totalGames); setError(null);
-        } catch (err) {} finally { if (!background) setLoading(false); }
+          for (const key in filters) if (filters[key]) params.append(key, (key.includes('gameplay') ? filters[key]*60 : filters[key]));
+          const res = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
+          setJogos(res.data.filteredGames); setTotalJogos(res.data.totalGames); setError(null);
+        } catch (err) { setError("Falha ao carregar jogos."); } finally { if (!bg) setLoading(false); }
       }, [filters]);
 
-      useEffect(() => { const handler = setTimeout(() => fetchJogos(), 500); return () => clearTimeout(handler); }, [filters, fetchJogos]);
+      useEffect(() => { const h = setTimeout(() => fetchJogos(), 500); return () => clearTimeout(h); }, [filters, fetchJogos]);
       
-      const handleFilterChange = (e) => setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
-      const handleOpenModal = (jogo = null) => { setEditingGame(jogo); setIsModalOpen(true); };
-      const handleCloseModal = () => { setIsModalOpen(false); setEditingGame(null); };
-
+      const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
       const handleSaveGame = async (gameData) => {
-        const dataToSend = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10) * 60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
-        delete dataToSend.gameplay_horas;
+        const data = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10)*60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
+        delete data.gameplay_horas;
         try {
-          editingGame ? await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, dataToSend) : await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
-          handleCloseModal(); fetchJogos(true);
-        } catch (err) { alert(err.response?.data?.error || "Falha ao salvar jogo."); }
+          editingGame ? await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, data) : await axios.post(`${API_BASE_URL}/jogos`, data);
+          setIsModalOpen(false); setEditingGame(null); fetchJogos(true);
+        } catch (err) { alert(err.response?.data?.error || "Erro ao salvar."); }
       };
 
       const handleDeleteGame = async (jogo) => {
-        if (window.confirm(`Tem certeza que deseja deletar "${jogo.titulo}"?`)) {
-          try { await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) {}
+        if (window.confirm(`Excluir "${jogo.titulo}"?`)) {
+          try { await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Erro ao excluir."); }
         }
       };
-
-      const hasFilters = Object.values(filters).some(value => value !== '');
 
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
       return (
-        <div className="container mx-auto p-4 sm:p-6 lg:p-8 relative z-10 pb-[300px]">
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center sm:text-left">
               <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
-              <p className="text-gray-400 mt-2">
-                {hasFilters ? <>Exibindo <span className="font-bold text-cyan-400">{jogos.length}</span> de <span className="font-bold text-cyan-400">{totalJogos}</span> jogos.</> : <>Atualmente com <span className="font-bold text-cyan-400">{totalJogos}</span> jogos na coleção.</>}
-              </p>
+              <p className="text-gray-400 mt-2">Exibindo <span className="text-cyan-400">{jogos.length}</span> de <span className="text-cyan-400">{totalJogos}</span> jogos.</p>
             </div>
-            {isAdmin && <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar Jogo</button>}
+            {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Adicionar Jogo</button>}
           </header>
 
-          <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
+          <div className="bg-gray-800 p-4 rounded-lg mb-8">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors">
-                <option value="">Todas as Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+                <option value="">Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors">
-                <option value="">Todos os Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+                <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
               </select>
-              <div className="flex items-center gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <div className="flex gap-2">
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
-              <div className="flex items-center gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <div className="flex gap-2">
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
               </div>
             </div>
           </div>
 
-          {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div></div> : (
+          {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={handleOpenModal} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p></div>}
+              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <p className="col-span-full text-center text-gray-500 mt-10">Nenhum jogo encontrado.</p>}
             </div>
           )}
-          {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={handleCloseModal} apiConfig={apiConfig} allGeneros={allGeneros} />}
+
+          {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={()=>{setIsModalOpen(false);setEditingGame(null);}} apiConfig={apiConfig} allGeneros={allGeneros} />}
         </div>
       );
     }
+
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot(container);
     root.render(<App />);
   </script>
 
   <!-- ========================================================================= -->
-  <!-- CARREGADOR MÁGICO DO TOWNSQUARE (Bypass absoluto do Babel)                -->
+  <!-- 4. CARREGAMENTO DO TOWNSQUARE (Dinâmico e Isolado)                        -->
   <!-- ========================================================================= -->
   
-  <!-- O TownSquare renderiza na perfeição nesta div neutra -->
   <div id="townsquare-target"></div>
 
-  <script>
-    window.addEventListener('load', function() {
-        // Usa o construtor 'Function' nativo para criar e invocar o script de inicialização do TownSquare
-        // Como isto é gerado dinamicamente em runtime, o Babel NUNCA o verá.
-        var initTownSquare = new Function(`
-            import('/townsquare.mjs').then(function(m) { 
-                m.mountTownSquare(document.getElementById('townsquare-target'), { 
-                    server: 'https://api.laricks.com.br', 
-                    room: 'laricks-biblioteca' 
-                }); 
-                console.log('🏰 TownSquare carregado e vivo sem interferência do Babel!');
-            }).catch(console.error);
-        `);
-        // Aguarda 1 segundo para garantir que o React gerou o DOM principal em segurança
-        setTimeout(initTownSquare, 1000);
-    });
-  </script>
+  <!-- Carrega a integração do TownSquare chamando o arquivo externo init-ts.mjs -->
+  <script type="module" src="/init-ts.mjs"></script>
 
 </body>
 </html>
