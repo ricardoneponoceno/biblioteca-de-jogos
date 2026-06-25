@@ -7,16 +7,71 @@
   
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   
-  <!-- CSS DO TOWNSQUARE (Carregado nativamente da Vercel) -->
+  <!-- CSS DO TOWNSQUARE -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
+
+  <!-- ========================================================================= -->
+  <!-- 1. INTERCEPTADORES INTELIGENTES (Preservam o Body das Ações)              -->
+  <!-- ========================================================================= -->
+  <script>
+      const isLocalNetwork = window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('172.') || window.location.hostname.startsWith('10.');
+      const TS_HOST = isLocalNetwork ? window.location.hostname + ':3004' : 'api.laricks.com.br';
+      const TS_PROTO_HTTP = isLocalNetwork ? 'http:' : 'https:';
+      const TS_PROTO_WS = isLocalNetwork ? 'ws:' : 'wss:';
+
+      // A. Intercepta WebSockets: Direciona para o backend correspondente
+      const OrigWS = window.WebSocket;
+      window.WebSocket = function(url, protocols) {
+          if (typeof url === 'string' && url.includes('/live')) {
+              try {
+                  const urlObj = new URL(url, window.location.origin);
+                  if (urlObj.host !== TS_HOST) {
+                      urlObj.host = TS_HOST;
+                      urlObj.protocol = TS_PROTO_WS;
+                      console.log('🔌 WebSocket Redirecionado para o Servidor Correto:', urlObj.toString());
+                      return new OrigWS(urlObj.toString(), protocols);
+                  }
+              } catch(e) {}
+          }
+          return new OrigWS(url, protocols);
+      };
+      window.WebSocket.prototype = OrigWS.prototype;
+
+      // B. Intercepta Fetch: Apanha ações preservando o Corpo (Body) da mensagem
+      const origFetch = window.fetch;
+      window.fetch = function(...args) {
+          let [resource, config] = args;
+          
+          let isRequestObj = resource instanceof Request;
+          let urlStr = isRequestObj ? resource.url : resource.toString();
+          
+          if (urlStr.includes('/chat') || urlStr.includes('/action') || urlStr.includes('/state')) {
+              try {
+                  const urlObj = new URL(urlStr, window.location.origin);
+                  if (urlObj.hostname === window.location.hostname) {
+                      urlObj.host = TS_HOST;
+                      urlObj.protocol = TS_PROTO_HTTP;
+                      
+                      // CORREÇÃO CRUCIAL: Se for um objeto Request, clonamos para não perder o POST Body!
+                      if (isRequestObj) {
+                          resource = new Request(urlObj.toString(), resource);
+                      } else {
+                          resource = urlObj.toString();
+                      }
+                      console.log('📡 Ação Redirecionada preservando dados:', urlObj.toString());
+                  }
+              } catch(e) {}
+          }
+          return origFetch(resource, config);
+      };
+  </script>
 
   <!-- Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <!-- Usamos o Babel Standalone de forma padrão -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="config.js"></script>
 
@@ -30,27 +85,28 @@
     ::-webkit-scrollbar-track { background: #1e293b; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    
+    #townsquare-target {
+        position: relative;
+        width: 100%;
+        min-height: 250px;
+        z-index: 40;
+    }
   </style>
 </head>
 <body>
 
   <!-- ========================================================================= -->
-  <!-- APLICAÇÃO REACT (Biblioteca de Jogos Limpa e Segura)                      -->
+  <!-- 2. APLICAÇÃO REACT (Biblioteca de Jogos Limpa e Segura)                   -->
   <!-- ========================================================================= -->
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
     
-    let API_BASE_URL;
-    const hostname = window.location.hostname;
-    const isLocalNetwork = hostname === 'localhost' || hostname.startsWith('192.168.') || hostname.startsWith('172.') || hostname.startsWith('10.');
-
-    if (isLocalNetwork) {
-      API_BASE_URL = `${window.location.protocol}//${hostname}:3000`;
-    } else {
-      API_BASE_URL = 'https://api.laricks.com.br';
-    }
+    let BACKEND_URL = typeof API_BASE_URL !== 'undefined' && API_BASE_URL 
+      ? API_BASE_URL 
+      : (isLocalNetwork ? `${window.location.protocol}//${window.location.hostname}:3000` : 'https://api.laricks.com.br');
     
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
@@ -141,6 +197,7 @@
       const handleGeneroChange = (gId) => setFormData(p => ({ ...p, generos: p.generos.includes(gId) ? p.generos.filter(id => id !== gId) : [...p.generos, gId] }));
       const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
 
+      // Inputs limpos sem duplicação de atributos
       return (
         <div className="modal-backdrop p-4">
           <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-700 flex flex-col max-h-[90vh]">
@@ -150,31 +207,31 @@
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="md:col-span-2 space-y-2">
                     <label className="flex items-center justify-between text-sm font-semibold text-gray-300"><span>Título</span>{isSearching && <span className="text-xs text-cyan-400 animate-pulse">A procurar dados...</span>}</label>
-                    <input ref={titleInputRef} name="titulo" value={formData.titulo} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                    <input ref={titleInputRef} name="titulo" value={formData.titulo} onChange={handleChange} placeholder="Ex: The Witcher 3" required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Plataforma</label>
-                    <select name="plataforma" value={formData.plataforma} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none">
+                    <select name="plataforma" value={formData.plataforma} onChange={handleChange} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="" disabled>Selecione...</option>
                         {PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
                    <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Lançamento</label>
-                    <input name="lancamento" type="date" value={formData.lancamento} onChange={handleChange} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                    <input name="lancamento" type="date" value={formData.lancamento} onChange={handleChange} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Gameplay (Horas)</label>
-                    <input name="gameplay_horas" type="number" value={formData.gameplay_horas} onChange={handleChange} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                    <input name="gameplay_horas" type="number" value={formData.gameplay_horas} onChange={handleChange} placeholder="Ex: 120" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Metacritic</label>
-                    <input name="metacritic" type="number" value={formData.metacritic} onChange={handleChange} min="0" max="100" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                    <input name="metacritic" type="number" value={formData.metacritic} onChange={handleChange} min="0" max="100" placeholder="0-100" className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="md:col-span-2 space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">URL da Capa</label>
                     <div className="flex gap-4">
-                      <input name="capa" value={formData.capa} onChange={handleChange} className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                      <input name="capa" value={formData.capa} onChange={handleChange} placeholder="https://..." className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       {formData.capa && <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600"><img src={formData.capa} className="w-full h-full object-cover" onError={(e)=>e.target.style.display='none'} /></div>}
                     </div>
                   </div>
@@ -192,7 +249,7 @@
                 </div>
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
-                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
                 <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
               </div>
             </form>
@@ -227,8 +284,8 @@
       useEffect(() => {
         const fetchInitialData = async () => {
             try {
-              if (typeof API_BASE_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
-              const [cRes, gRes] = await Promise.all([axios.get(`${API_BASE_URL}/config`), axios.get(`${API_BASE_URL}/generos`)]);
+              if (typeof BACKEND_URL === 'undefined') { setTimeout(fetchInitialData, 100); return; }
+              const [cRes, gRes] = await Promise.all([axios.get(`${BACKEND_URL}/config`), axios.get(`${BACKEND_URL}/generos`)]);
               setApiConfig(cRes.data); setAllGeneros(gRes.data);
             } catch (err) { setError("Falha na API."); }
         };
@@ -237,11 +294,11 @@
 
       const fetchJogos = useCallback(async (bg = false) => {
         try {
-          if (!API_BASE_URL) return;
+          if (!BACKEND_URL) return;
           if (!bg) setLoading(true);
           const params = new URLSearchParams();
           for (const key in filters) if (filters[key]) params.append(key, (key.includes('gameplay') ? filters[key]*60 : filters[key]));
-          const res = await axios.get(`${API_BASE_URL}/jogos?${params.toString()}`);
+          const res = await axios.get(`${BACKEND_URL}/jogos?${params.toString()}`);
           setJogos(res.data.filteredGames); setTotalJogos(res.data.totalGames); setError(null);
         } catch (err) { setError("Falha ao carregar jogos."); } finally { if (!bg) setLoading(false); }
       }, [filters]);
@@ -253,21 +310,25 @@
         const data = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10)*60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
         delete data.gameplay_horas;
         try {
-          editingGame ? await axios.put(`${API_BASE_URL}/jogos/${editingGame.id}`, data) : await axios.post(`${API_BASE_URL}/jogos`, data);
+          if (editingGame) {
+             await axios.put(`${BACKEND_URL}/jogos/${editingGame.id}`, data);
+          } else {
+             await axios.post(`${BACKEND_URL}/jogos`, data);
+          }
           setIsModalOpen(false); setEditingGame(null); fetchJogos(true);
-        } catch (err) { alert(err.response?.data?.error || "Erro ao salvar."); }
+        } catch (err) { alert((err.response && err.response.data && err.response.data.error) || "Erro ao salvar."); }
       };
 
       const handleDeleteGame = async (jogo) => {
         if (window.confirm(`Excluir "${jogo.titulo}"?`)) {
-          try { await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Erro ao excluir."); }
+          try { await axios.delete(`${BACKEND_URL}/jogos/${jogo.id}`); fetchJogos(true); } catch (err) { alert("Erro ao excluir."); }
         }
       };
 
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
       return (
-        <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8 mb-10">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center sm:text-left">
               <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
@@ -296,7 +357,7 @@
             </div>
           </div>
 
-          {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
+          {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
               {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p></div>}
             </div>
@@ -313,26 +374,33 @@
   </script>
 
   <!-- ========================================================================= -->
-  <!-- CARREGADOR NATIVO DO TOWNSQUARE (Sem Interceptadores e Sem Crash)         -->
+  <!-- 3. INJEÇÃO DO TOWNSQUARE (Dinâmica, Segura e Pura)                        -->
   <!-- ========================================================================= -->
   
   <div id="townsquare-target"></div>
 
   <script>
-    // Usamos um script puro. O Babel Standalone ignora isto completamente!
     window.addEventListener('load', function() {
         setTimeout(function() {
             var target = document.getElementById('townsquare-target');
             if (target) {
-                // A função nativa resolve TUDO (fetch e WebSockets) usando a propriedade 'server'
-                // Construímos o import dinâmico dentro de uma Function para não despertar o Babel.
-                var loadTS = new Function("rootElem", 
-                    "import('/townsquare.mjs').then(function(m) { " +
-                    "   m.mountTownSquare(rootElem, { server: 'https://api.laricks.com.br', room: 'laricks-biblioteca' }); " +
-                    "   console.log('🏰 TownSquare iniciado nativamente e em pleno funcionamento!'); " +
+                target.style.pointerEvents = 'none';
+
+                var moduleUrl = window.location.origin + '/townsquare.mjs';
+
+                var loadTS = new Function("url", "rootElem", "roomName", 
+                    "return import(url).then(function(m) { " +
+                        "m.mountTownSquare(rootElem, { server: window.location.origin, room: roomName }); " +
+                        "setTimeout(function() { " +
+                            "Array.from(rootElem.children).forEach(function(child) { " +
+                                "child.style.pointerEvents = 'auto'; " +
+                            "}); " +
+                        "}, 1500); " +
                     "}).catch(console.error);"
                 );
-                loadTS(target);
+
+                loadTS(moduleUrl, target, 'laricks-biblioteca');
+                console.log('🏰 TownSquare injetado na base da página com total sucesso!');
             }
         }, 1000);
     });
