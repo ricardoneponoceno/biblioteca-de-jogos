@@ -7,49 +7,27 @@
   
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   
-  <!-- CSS DO TOWNSQUARE -->
+  <!-- CSS DO TOWNSQUARE (Carregado nativamente) -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
 
   <!-- ========================================================================= -->
-  <!-- INTERCEPTADOR BLINDADO (Garante o encaminhamento correto do tráfego)      -->
+  <!-- INTERCEPTADOR LEVE (Apenas WebSockets, o Fetch é gerido pelo TS)          -->
   <!-- ========================================================================= -->
   <script>
-      const TS_DOMAIN = 'api.laricks.com.br';
-
-      // 1. Intercepta WebSockets: Força WSS para a API (Movimento do boneco)
+      // Garante que o movimento dos bonecos encontra o servidor Oracle
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
-          if (typeof url === 'string' && url.includes('/live') && !url.includes(TS_DOMAIN)) {
-              console.log('🔌 WebSocket Redirecionado para a Oracle');
-              return new OriginalWebSocket('wss://' + TS_DOMAIN + '/live', protocols);
+          if (typeof url === 'string' && url.includes('/live') && !url.includes('api.laricks.com.br')) {
+              console.log('🔌 WebSocket Redirecionado com segurança para a Oracle');
+              return new OriginalWebSocket('wss://api.laricks.com.br/live', protocols);
           }
           return new OriginalWebSocket(url, protocols);
       };
       window.WebSocket.prototype = OriginalWebSocket.prototype;
-
-      // 2. Intercepta Fetch: Apanha ações (Chat/Sentar) e envia para a Oracle
-      const originalFetch = window.fetch;
-      window.fetch = async function(...args) {
-          let [resource, config] = args;
-          let urlStr = typeof resource === 'string' ? resource : (resource instanceof Request ? resource.url : resource.toString());
-          
-          if (urlStr.includes('/chat') || urlStr.includes('/action') || urlStr.includes('/state')) {
-              try {
-                  const urlObj = new URL(urlStr, window.location.origin);
-                  if (!urlObj.hostname.includes(TS_DOMAIN)) {
-                      urlObj.protocol = 'https:';
-                      urlObj.hostname = TS_DOMAIN;
-                      urlObj.port = ''; 
-                      resource = (args[0] instanceof Request) ? new Request(urlObj.toString(), args[0]) : urlObj.toString();
-                      console.log('📡 Ação Fetch Redirecionada para a Oracle:', urlObj.toString());
-                  }
-              } catch(e) {}
-          }
-          return originalFetch(resource, config);
-      };
   </script>
 
+  <!-- Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -67,16 +45,26 @@
     ::-webkit-scrollbar-track { background: #1e293b; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    
+    /* Configuração âncora para a Praça (Livre para expandir e sem bloqueio de cliques) */
+    #townsquare-target {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        z-index: 45;
+    }
   </style>
 </head>
 <body>
 
   <!-- ========================================================================= -->
-  <!-- APLICAÇÃO REACT (Biblioteca de Jogos Intacta)                             -->
+  <!-- APLICAÇÃO REACT (Isolada do Babel Automático)                             -->
+  <!-- Usando type="text/plain", o Babel Standalone nunca vai interferir         -->
   <!-- ========================================================================= -->
   <div id="root"></div>
 
-  <script type="text/babel">
+  <script id="react-source" type="text/plain">
     const { useState, useEffect, useCallback, useRef } = React;
     
     let API_BASE_URL;
@@ -229,8 +217,8 @@
                 </div>
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
-                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
-                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg">Salvar</button>
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
+                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
               </div>
             </form>
           </div>
@@ -310,32 +298,32 @@
               <h1 className="text-4xl font-bold text-white">Laricks Biblioteca de Jogos</h1>
               <p className="text-gray-400 mt-2">Exibindo <span className="text-cyan-400">{jogos.length}</span> de <span className="text-cyan-400">{totalJogos}</span> jogos.</p>
             </div>
-            {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Adicionar Jogo</button>}
+            {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar Jogo</button>}
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                 <option value="">Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                 <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
               </select>
               <div className="flex gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
               </div>
               <div className="flex gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
               </div>
             </div>
           </div>
 
           {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full text-center text-gray-500 mt-10"><p className="text-xl">Nenhum jogo encontrado.</p></div>}
+              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p></div>}
             </div>
           )}
 
@@ -343,48 +331,53 @@
         </div>
       );
     }
-
-    const container = document.getElementById('root');
-    const root = ReactDOM.createRoot(container);
-    root.render(<App />);
   </script>
 
   <!-- ========================================================================= -->
-  <!-- CARREGADOR MÁGICO DO TOWNSQUARE (Bypass Absoluto do Babel)                -->
+  <!-- 3. COMPILADOR E INJETOR MANUAL (Bypass Absoluto do Babel)                 -->
+  <!-- ========================================================================= -->
+  <script>
+    // Este script compila o React manualmente e injeta-o. 
+    // Como NUNCA usámos <script type="text/babel"> livre no HTML, 
+    // o Babel nunca inicia a sua espionagem e nunca cracha!
+    window.addEventListener('DOMContentLoaded', () => {
+        try {
+            const reactCode = document.getElementById('react-source').textContent;
+            // Compila o código
+            const compiledCode = Babel.transform(reactCode, { presets: ['react'] }).code;
+            
+            // Injeta o código compilado na página
+            const script = document.createElement('script');
+            script.textContent = compiledCode + "\nconst root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);";
+            document.body.appendChild(script);
+            console.log('✅ React renderizado com segurança.');
+        } catch (error) {
+            console.error('❌ Erro na compilação do React:', error);
+        }
+    });
+  </script>
+
+  <!-- ========================================================================= -->
+  <!-- 4. CARREGAMENTO DO TOWNSQUARE (Dinâmico e Sem Restrições)                 -->
   <!-- ========================================================================= -->
   
   <div id="townsquare-target"></div>
 
-  <script>
-    window.addEventListener('load', function() {
-        setTimeout(function() {
-            const target = document.getElementById('townsquare-target');
-            if (target) {
-                target.style.position = 'fixed';
-                target.style.bottom = '0';
-                target.style.left = '0';
-                target.style.width = '100%';
-                target.style.zIndex = '45';
-                target.style.pointerEvents = 'none';
-
-                // O construtor Function cria o código de forma nativa e oculta a palavra-chave "import"
-                // do analisador estático do Babel Standalone, evitando o crash!
-                var loadTS = new Function("url", "rootElem", "roomName", 
-                    "return import(url).then(function(m) { " +
-                        "m.mountTownSquare(rootElem, { server: 'https://api.laricks.com.br', room: roomName }); " +
-                        "setTimeout(function() { " +
-                            "Array.from(rootElem.children).forEach(function(child) { " +
-                                "child.style.pointerEvents = 'auto'; " +
-                            "}); " +
-                        "}, 1500); " +
-                    "}).catch(console.error);"
-                );
-
-                loadTS('/townsquare.mjs', target, 'laricks-biblioteca');
-                console.log('🏰 TownSquare injetado livremente e invisível ao Babel!');
-            }
-        }, 1000);
-    });
+  <script type="module">
+    import { mountTownSquare } from '/townsquare.mjs';
+    
+    // Passamos a URL correta diretamente à biblioteca!
+    // A biblioteca trata das chamadas fetch e websocket internamente.
+    setTimeout(() => {
+        const rootElem = document.getElementById('townsquare-target');
+        if (rootElem) {
+            mountTownSquare(rootElem, { 
+                server: 'https://api.laricks.com.br', 
+                room: 'laricks-biblioteca' 
+            });
+            console.log('🏰 TownSquare carregado de forma nativa e sem restrições!');
+        }
+    }, 1000);
   </script>
 
 </body>
