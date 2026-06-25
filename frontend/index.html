@@ -5,6 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Laricks Biblioteca de Jogos</title>
   
+  <!-- INTERCEPTADOR DE WEBSOCKET (DEVE SER O PRIMEIRO SCRIPT DA PÁGINA) -->
+  <script>
+      const OriginalWebSocket = window.WebSocket;
+      window.WebSocket = function(url, protocols) {
+          // Se tentar ligar ao multiplayer e não estiver a ir para a Oracle...
+          if (typeof url === 'string' && url.includes('/live') && !url.includes('api.laricks.com.br')) {
+              // ...Forçamos a ligação para a sua API segura na Oracle!
+              const urlObj = new URL(url);
+              urlObj.host = 'api.laricks.com.br';
+              urlObj.protocol = 'wss:';
+              console.log('Interceptador Mágico: Redirecionando WebSocket para', urlObj.toString());
+              return new OriginalWebSocket(urlObj.toString(), protocols);
+          }
+          return new OriginalWebSocket(url, protocols);
+      };
+      window.WebSocket.prototype = OriginalWebSocket.prototype;
+  </script>
+
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -12,18 +30,14 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   
-  <!-- Carrega o ficheiro de configuração antes do script da aplicação -->
+  <!-- Carrega o ficheiro de configuração (se existir) -->
   <script src="config.js"></script>
 
-  <!-- NOVO: Injeção Dinâmica do TownSquare -->
+  <!-- Configurações Iniciais e CSS do TownSquare -->
   <script>
-    // Verifica se estamos num ambiente local ou na Vercel em Produção
     window.isLocalTS = window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.');
-    
-    // CORREÇÃO: Usamos o SEU domínio real da API que já está no Nginx Proxy Manager
     window.TOWNSQUARE_BASE_URL = window.isLocalTS ? window.location.origin : 'https://api.laricks.com.br';
 
-    // Injeta os ficheiros CSS oficiais apontando para o servidor correto
     ['/tokens.css', '/widget.css'].forEach(path => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
@@ -61,9 +75,9 @@
     .genre-tag {
       background-color: rgba(255, 255, 255, 0.1);
       color: #e2e8f0;
-      padding: 2px 8px;
+      padding: 2px 6px;
       border-radius: 4px;
-      font-size: 0.70rem;
+      font-size: 0.65rem;
       font-weight: 500;
       white-space: nowrap; 
     }
@@ -88,10 +102,18 @@
 
   <div id="root"></div>
 
+  <!-- Container fixo do TownSquare no rodapé -->
+  <div id="townsquare-wrapper" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 250px; z-index: 45; pointer-events: none; overflow: hidden; background: transparent;"></div>
+
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
     
+    // Define a API BASE URL dinamicamente garantindo o bypass na Vercel
+    const API_BASE_URL = window.isLocalTS ? `${window.location.protocol}//${window.location.hostname}:3000` : 'https://api.laricks.com.br';
+    
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
+
+    // --- Componentes ---
 
     function GameCard({ jogo, onEdit, onDelete, isAdmin }) {
       const formatarGameplay = (minutos) => {
@@ -162,7 +184,6 @@
         titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
       });
       const [isSearching, setIsSearching] = useState(false);
-      
       const titleInputRef = useRef(null);
 
       useEffect(() => {
@@ -485,7 +506,7 @@
             await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
           }
           handleCloseModal();
-          fetchJogos(true); // Chama em background para não resetar o scroll
+          fetchJogos(true); 
         } catch (err) {
           console.error("Erro ao salvar jogo:", err);
           if (err.response && err.response.data && err.response.data.error) {
@@ -500,7 +521,7 @@
         if (window.confirm(`Tem certeza que deseja deletar "${jogo.titulo}"?`)) {
           try {
             await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`);
-            fetchJogos(true); // Chama em background para não resetar o scroll
+            fetchJogos(true); 
           } catch (err) {
             console.error("Erro ao deletar jogo:", err);
             alert("Falha ao deletar jogo.");
@@ -615,28 +636,26 @@
     root.render(<App />);
   </script>
 
-  <!-- Container fixo no rodapé para o TownSquare -->
-  <div id="townsquare-wrapper"></div>
-
-  <!-- Inicialização Nativa do TownSquare (Isolada e Segura) -->
+  <!-- INJEÇÃO BLINDADA: Evita o crash do Babel e injeta o TownSquare em segurança -->
   <script>
-    // Usamos um script normal para injetar a tag module e esconder a palavra import do Babel Standalone
-    setTimeout(() => {
-        const rootElement = document.getElementById('townsquare-wrapper');
-        if (rootElement) {
-            const script = document.createElement('script');
-            script.type = 'module';
-            script.innerHTML = `
-              import { mountTownSquare } from '${window.TOWNSQUARE_BASE_URL}/townsquare.mjs';
-              mountTownSquare(document.getElementById('townsquare-wrapper'), { 
-                server: '${window.TOWNSQUARE_BASE_URL}', 
-                room: 'laricks-biblioteca' 
-              });
-              console.log('TownSquare montado com sucesso via Injeção Dinâmica!');
-            `;
-            document.body.appendChild(script);
-        }
-    }, 500);
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            const rootElement = document.getElementById('townsquare-wrapper');
+            if (rootElement) {
+                rootElement.style.pointerEvents = 'none';
+                
+                // Quebramos a palavra propositadamente para o Babel não a detetar e crachar a compilação JSX
+                const codeString = "im" + "port { mountTownSquare } from '" + window.TOWNSQUARE_BASE_URL + "/townsquare.mjs';\n" +
+                                   "mountTownSquare(document.getElementById('townsquare-wrapper'), { server: '" + window.TOWNSQUARE_BASE_URL + "', room: 'laricks-biblioteca' });\n" +
+                                   "setTimeout(() => { Array.from(document.getElementById('townsquare-wrapper').children).forEach(child => { child.style.pointerEvents = 'auto'; child.style.height = '100%'; child.style.width = '100%'; child.style.position = 'absolute'; child.style.bottom = '0'; }); }, 200);";
+                
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.textContent = codeString;
+                document.body.appendChild(script);
+            }
+        }, 800);
+    });
   </script>
 
 </body>
