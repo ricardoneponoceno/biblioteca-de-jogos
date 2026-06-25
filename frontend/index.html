@@ -7,26 +7,34 @@
   
   <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/000000/game-controller.png">
   
-  <!-- CSS DO TOWNSQUARE (Carregado nativamente) -->
+  <!-- CSS DO TOWNSQUARE -->
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/widget.css">
 
   <!-- ========================================================================= -->
-  <!-- INTERCEPTADOR BLINDADO (Garante que o TownSquare fala com a Oracle)       -->
+  <!-- INTERCEPTADOR BLINDADO (Sem portas fixas, envia tudo para a Oracle)       -->
   <!-- ========================================================================= -->
   <script>
-      // 1. Intercepta WebSockets: Força WSS puro para a API
+      const TS_DOMAIN = 'api.laricks.com.br';
+
+      // 1. Intercepta WebSockets: Força WSS puro para a API (Movimento do boneco)
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
-          if (typeof url === 'string' && url.includes('/live')) {
-              console.log('🔌 WebSocket Redirecionado para a Oracle');
-              return new OriginalWebSocket('wss://api.laricks.com.br/live', protocols);
+          if (typeof url === 'string' && url.includes('/live') && !url.includes(TS_DOMAIN)) {
+              try {
+                  const urlObj = new URL(url);
+                  urlObj.hostname = TS_DOMAIN;
+                  urlObj.protocol = 'wss:';
+                  urlObj.port = ''; // Garante que usa a porta 443 padrão do SSL
+                  console.log('🔌 WebSocket Redirecionado para a Oracle:', urlObj.toString());
+                  return new OriginalWebSocket(urlObj.toString(), protocols);
+              } catch(e) {}
           }
           return new OriginalWebSocket(url, protocols);
       };
       window.WebSocket.prototype = OriginalWebSocket.prototype;
 
-      // 2. Intercepta Fetch: Apanha ações (Chat/Sentar) e envia para a Oracle
+      // 2. Intercepta Fetch: Apanha ações (Chat/Sentar/Estado) e envia para a Oracle
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
           let [resource, config] = args;
@@ -37,7 +45,7 @@
               const urlObj = new URL(urlStr, window.location.origin);
               if (tsApiPaths.some(p => urlObj.pathname === p || urlObj.pathname.startsWith(p + '/'))) {
                   urlObj.protocol = 'https:';
-                  urlObj.hostname = 'api.laricks.com.br';
+                  urlObj.hostname = TS_DOMAIN;
                   urlObj.port = ''; 
                   
                   if (resource instanceof Request) {
@@ -45,6 +53,7 @@
                   } else {
                       resource = urlObj.toString();
                   }
+                  console.log('📡 Ação Fetch Redirecionada para a Oracle:', urlObj.toString());
               }
           } catch(e) {}
           
@@ -53,16 +62,16 @@
   </script>
 
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- O Babel standalone continua aqui APENAS para traduzir o React -->
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <!-- O Babel standalone continua aqui APENAS para a biblioteca de jogos -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="config.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
-    body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+    body { font-family: 'Inter', sans-serif; background-color: #0f172a; margin: 0; }
     .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 50; }
     .genre-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; align-content: flex-start; }
     .genre-tag { background-color: rgba(255, 255, 255, 0.1); color: #e2e8f0; padding: 2px 8px; border-radius: 4px; font-size: 0.70rem; font-weight: 500; white-space: nowrap; }
@@ -70,15 +79,6 @@
     ::-webkit-scrollbar-track { background: #1e293b; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-    
-    /* Configuração âncora para a Praça (Livre para expandir) */
-    #townsquare-target {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        z-index: 45;
-    }
   </style>
 </head>
 <body>
@@ -224,14 +224,14 @@
                     <label className="block text-sm font-semibold text-gray-300">URL da Capa</label>
                     <div className="flex gap-4">
                       <input name="capa" value={formData.capa} onChange={handleChange} className="flex-grow p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
-                      {formData.capa && <img src={formData.capa} className="w-12 h-16 object-cover rounded border border-gray-600" alt="Preview" onError={(e)=>e.target.style.display='none'} />}
+                      {formData.capa && <div className="w-12 h-16 bg-black rounded overflow-hidden flex-shrink-0 border border-gray-600"><img src={formData.capa} className="w-full h-full object-cover" onError={(e)=>e.target.style.display='none'} /></div>}
                     </div>
                   </div>
                   <div className="md:col-span-2 space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Gêneros</label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 bg-gray-900/50 p-3 rounded-lg border border-gray-600 max-h-32 overflow-y-auto">
                       {allGeneros.map(g => (
-                        <label key={g.id} className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                        <label key={g.id} className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer hover:text-white">
                           <input type="checkbox" checked={formData.generos.includes(g.id)} onChange={() => handleGeneroChange(g.id)} className="form-checkbox bg-gray-700 border-gray-500 text-blue-500" />
                           <span>{g.name}</span>
                         </label>
@@ -241,8 +241,8 @@
                 </div>
               </div>
               <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
-                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg transition-colors border border-gray-600">Cancelar</button>
-                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+                <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg">Salvar</button>
               </div>
             </form>
           </div>
@@ -325,32 +325,31 @@
             {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Adicionar Jogo</button>}
           </header>
 
-          <div className="bg-gray-800 p-4 rounded-lg mb-8">
+          <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                 <option value="">Plataformas</option>{PLATAFORMAS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600">
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                 <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
               </select>
               <div className="flex gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
               </div>
               <div className="flex gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
               </div>
             </div>
           </div>
 
           {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <p className="col-span-full text-center text-gray-500 mt-10">Nenhum jogo encontrado.</p>}
+              {jogos.length > 0 ? jogos.map(jogo => <GameCard key={jogo.id} jogo={jogo} onEdit={(j)=>{setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteGame} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">Nenhum jogo encontrado com os filtros aplicados.</p></div>}
             </div>
           )}
-
           {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={()=>{setIsModalOpen(false);setEditingGame(null);}} apiConfig={apiConfig} allGeneros={allGeneros} />}
         </div>
       );
@@ -362,13 +361,50 @@
   </script>
 
   <!-- ========================================================================= -->
-  <!-- 4. CARREGAMENTO DO TOWNSQUARE (Dinâmico e Isolado)                        -->
+  <!-- 4. CARREGAMENTO DO TOWNSQUARE (Bypass Invisível do Babel)                 -->
   <!-- ========================================================================= -->
   
+  <!-- Contentor base. Está fixado no fundo, mas é LIVRE para expandir sem limites -->
   <div id="townsquare-target"></div>
 
-  <!-- Carrega a integração do TownSquare chamando o arquivo externo init-ts.mjs -->
-  <script type="module" src="/init-ts.mjs"></script>
+  <!-- Um script "clássico" não define "type=module" e por isso o Babel IGNORA-O! -->
+  <script>
+    window.addEventListener('load', function() {
+        // Usa setTimeout para garantir que a página carregou antes de invocar o TS
+        setTimeout(function() {
+            const target = document.getElementById('townsquare-target');
+            if (target) {
+                // Prepara a âncora visual do TownSquare, mas deixa-o livre para gerir a sua própria altura (Expandir)
+                target.style.position = 'fixed';
+                target.style.bottom = '0';
+                target.style.left = '0';
+                target.style.width = '100%';
+                target.style.zIndex = '45';
+                
+                // Oculta cliques temporariamente para não bloquear a biblioteca no arranque
+                target.style.pointerEvents = 'none';
+
+                // Usamos a função de importação dinâmica import() que é nativa do browser.
+                // Como não usamos type="module", o Babel fica completamente cego a esta linha!
+                import('/townsquare.mjs').then(function(module) {
+                    module.mountTownSquare(target, { 
+                        server: 'https://api.laricks.com.br', 
+                        room: 'laricks-biblioteca' 
+                    });
+                    
+                    // 1.5s após a montagem, ativamos o clique apenas nos filhos (avatares, botões)
+                    setTimeout(function() {
+                        Array.from(target.children).forEach(function(child) {
+                            child.style.pointerEvents = 'auto';
+                        });
+                    }, 1500);
+
+                    console.log('🏰 TownSquare injetado em segurança!');
+                }).catch(console.error);
+            }
+        }, 1000);
+    });
+  </script>
 
 </body>
 </html>
