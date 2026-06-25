@@ -9,9 +9,9 @@
   <script>
       const OriginalWebSocket = window.WebSocket;
       window.WebSocket = function(url, protocols) {
-          // Se tentar ligar ao multiplayer e não estiver a ir para a Oracle...
+          // Se tentar ligar ao multiplayer e não estiver a ir para a API do NPM...
           if (typeof url === 'string' && url.includes('/live') && !url.includes('api.laricks.com.br')) {
-              // ...Forçamos a ligação para a sua API segura na Oracle!
+              // ...Forçamos a ligação para a sua API segura!
               const urlObj = new URL(url);
               urlObj.host = 'api.laricks.com.br';
               urlObj.protocol = 'wss:';
@@ -30,7 +30,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   
-  <!-- Carrega o ficheiro de configuração (se existir) -->
+  <!-- Carrega o ficheiro de configuração antes do script da aplicação -->
   <script src="config.js"></script>
 
   <!-- Configurações Iniciais e CSS do TownSquare -->
@@ -81,7 +81,6 @@
       font-weight: 500;
       white-space: nowrap; 
     }
-    
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -102,18 +101,10 @@
 
   <div id="root"></div>
 
-  <!-- Container fixo do TownSquare no rodapé -->
-  <div id="townsquare-wrapper" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 250px; z-index: 45; pointer-events: none; overflow: hidden; background: transparent;"></div>
-
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
     
-    // Define a API BASE URL dinamicamente garantindo o bypass na Vercel
-    const API_BASE_URL = window.isLocalTS ? `${window.location.protocol}//${window.location.hostname}:3000` : 'https://api.laricks.com.br';
-    
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
-
-    // --- Componentes ---
 
     function GameCard({ jogo, onEdit, onDelete, isAdmin }) {
       const formatarGameplay = (minutos) => {
@@ -184,6 +175,7 @@
         titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: []
       });
       const [isSearching, setIsSearching] = useState(false);
+      
       const titleInputRef = useRef(null);
 
       useEffect(() => {
@@ -506,7 +498,7 @@
             await axios.post(`${API_BASE_URL}/jogos`, dataToSend);
           }
           handleCloseModal();
-          fetchJogos(true); 
+          fetchJogos(true); // Chama em background para não resetar o scroll
         } catch (err) {
           console.error("Erro ao salvar jogo:", err);
           if (err.response && err.response.data && err.response.data.error) {
@@ -521,7 +513,7 @@
         if (window.confirm(`Tem certeza que deseja deletar "${jogo.titulo}"?`)) {
           try {
             await axios.delete(`${API_BASE_URL}/jogos/${jogo.id}`);
-            fetchJogos(true); 
+            fetchJogos(true); // Chama em background para não resetar o scroll
           } catch (err) {
             console.error("Erro ao deletar jogo:", err);
             alert("Falha ao deletar jogo.");
@@ -557,14 +549,14 @@
             )}
           </header>
 
-          <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
+          <div className="bg-gray-800 p-4 rounded-lg mb-8">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Filtrar por Título..." className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <select 
                 name="plataforma" 
                 value={filters.plataforma} 
                 onChange={handleFilterChange} 
-                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todas as Plataformas</option>
                 {PLATAFORMAS.map(plataforma => (
@@ -577,7 +569,7 @@
                 name="genero" 
                 value={filters.genero} 
                 onChange={handleFilterChange} 
-                className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                className="p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todos os Gêneros</option>
                 {allGeneros.map(genero => (
@@ -587,14 +579,14 @@
                 ))}
               </select>
               <div className="flex items-center gap-2">
-                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-gray-400">-</span>
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2">
-                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                <span className="text-gray-500">-</span>
-                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-gray-400">-</span>
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Máx" className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
           </div>
@@ -636,7 +628,10 @@
     root.render(<App />);
   </script>
 
-  <!-- INJEÇÃO BLINDADA: Evita o crash do Babel e injeta o TownSquare em segurança -->
+  <!-- Container do TownSquare -->
+  <div id="townsquare-wrapper" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 250px; z-index: 45; pointer-events: none; overflow: hidden; background: transparent;"></div>
+
+  <!-- INJEÇÃO BLINDADA: Evita o crash do Babel a 100% -->
   <script>
     window.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
@@ -644,15 +639,30 @@
             if (rootElement) {
                 rootElement.style.pointerEvents = 'none';
                 
-                // Quebramos a palavra propositadamente para o Babel não a detetar e crachar a compilação JSX
-                const codeString = "im" + "port { mountTownSquare } from '" + window.TOWNSQUARE_BASE_URL + "/townsquare.mjs';\n" +
-                                   "mountTownSquare(document.getElementById('townsquare-wrapper'), { server: '" + window.TOWNSQUARE_BASE_URL + "', room: 'laricks-biblioteca' });\n" +
-                                   "setTimeout(() => { Array.from(document.getElementById('townsquare-wrapper').children).forEach(child => { child.style.pointerEvents = 'auto'; child.style.height = '100%'; child.style.width = '100%'; child.style.position = 'absolute'; child.style.bottom = '0'; }); }, 200);";
-                
-                const script = document.createElement('script');
-                script.type = 'module';
-                script.textContent = codeString;
-                document.body.appendChild(script);
+                // Usamos a classe 'Function' nativa para instanciar a lógica dinamicamente.
+                // Isto esconde a sintaxe do "import()" nativo do radar do Babel,
+                // prevenindo que ele tente traduzir código no DOM ou intercetar a execução.
+                const loadTownSquare = new Function('url', 'root', 'roomName', `
+                    return import(url).then(module => {
+                        module.mountTownSquare(root, { 
+                            server: url.replace('/townsquare.mjs', ''), 
+                            room: roomName 
+                        });
+                        setTimeout(() => { 
+                            Array.from(root.children).forEach(child => { 
+                                child.style.pointerEvents = 'auto'; 
+                                child.style.height = '100%'; 
+                                child.style.width = '100%'; 
+                                child.style.position = 'absolute'; 
+                                child.style.bottom = '0'; 
+                            }); 
+                        }, 200);
+                    });
+                `);
+
+                loadTownSquare(window.TOWNSQUARE_BASE_URL + '/townsquare.mjs', rootElement, 'laricks-biblioteca')
+                    .then(() => console.log('TownSquare carregado sem interferência do Babel!'))
+                    .catch(err => console.error("Erro ao carregar TownSquare:", err));
             }
         }, 800);
     });
