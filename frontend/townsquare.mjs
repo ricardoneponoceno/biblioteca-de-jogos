@@ -270,7 +270,7 @@ export function mountTownSquare(root, options = {}) {
     },
     socket: localOnly
       ? { readyState: WebSocket.CLOSED, close() {}, send() {} }
-      : new WebSocket('wss://laricks-biblioteca.duckdns.org:8443/live'),
+      : new WebSocket(ctx.socketUrl),
     reconnectTimer: null,
     typingTimer: null,
     quiet: false,
