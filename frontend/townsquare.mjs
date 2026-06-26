@@ -270,7 +270,7 @@ export function mountTownSquare(root, options = {}) {
     },
     socket: localOnly
       ? { readyState: WebSocket.CLOSED, close() {}, send() {} }
-      : new WebSocket(ctx.socketUrl),
+      : new WebSocket(window.location.origin.replace('http', 'ws') + '/live'),
     reconnectTimer: null,
     typingTimer: null,
     quiet: false,
