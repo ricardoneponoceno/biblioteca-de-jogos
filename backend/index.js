@@ -110,7 +110,7 @@ app.get('/jogos', async (req, res) => {
 });
 
 app.post('/jogos', async (req, res) => {
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos } = req.body;
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
@@ -119,11 +119,11 @@ app.post('/jogos', async (req, res) => {
   try {
     await client.query('BEGIN');
     const insertGameQuery = `
-      INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa) 
-      VALUES($1, $2, $3, $4, $5, $6) 
+      INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, rawg_id, hltb_id)
+      VALUES($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *;
     `;
-    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa];
+    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, rawg_id ?? null, hltb_id ?? null];
     const newGameResult = await client.query(insertGameQuery, gameValues);
     const newGame = newGameResult.rows[0];
 
@@ -139,7 +139,7 @@ app.post('/jogos', async (req, res) => {
     await client.query('ROLLBACK');
     console.error("Erro ao adicionar jogo:", err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: `O jogo com o título "${titulo}" já existe.` });
+      return res.status(409).json({ error: 'Esse jogo já está no catálogo (mesmo id de RAWG ou HowLongToBeat).' });
     }
     res.status(500).json({ error: 'Erro ao adicionar o jogo.' });
   } finally {
@@ -149,7 +149,7 @@ app.post('/jogos', async (req, res) => {
 
 app.put('/jogos/:id', async (req, res) => {
   const { id } = req.params;
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos } = req.body;
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
@@ -159,12 +159,12 @@ app.put('/jogos/:id', async (req, res) => {
     await client.query('BEGIN');
 
     const updateGameQuery = `
-      UPDATE jogos 
-      SET titulo = $1, plataforma = $2, lancamento = $3, gameplay_minutos = $4, metacritic = $5, capa = $6 
-      WHERE id = $7 
+      UPDATE jogos
+      SET titulo = $1, plataforma = $2, lancamento = $3, gameplay_minutos = $4, metacritic = $5, capa = $6, rawg_id = $7, hltb_id = $8
+      WHERE id = $9
       RETURNING *;
     `;
-    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, id];
+    const gameValues = [titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, rawg_id ?? null, hltb_id ?? null, id];
     const updatedGameResult = await client.query(updateGameQuery, gameValues);
     
     if (updatedGameResult.rows.length === 0) {
@@ -185,7 +185,7 @@ app.put('/jogos/:id', async (req, res) => {
     await client.query('ROLLBACK');
     console.error("Erro ao atualizar jogo:", err);
      if (err.code === '23505') {
-      return res.status(409).json({ error: `O jogo com o título "${titulo}" já existe.` });
+      return res.status(409).json({ error: 'Esse jogo já está no catálogo (mesmo id de RAWG ou HowLongToBeat).' });
     }
     res.status(500).json({ error: 'Erro ao atualizar o jogo.' });
   } finally {
