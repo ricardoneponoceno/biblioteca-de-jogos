@@ -28,6 +28,9 @@ const corsOptions = {
       callback(new Error('Não permitido pela política de CORS'));
     }
   },
+  // Sem isso, o navegador não deixa o JS ler o header X-New-Token da resposta —
+  // CORS só expõe um conjunto pequeno de headers "seguros" por padrão.
+  exposedHeaders: ['X-New-Token'],
 };
 
 app.use(cors(corsOptions));
@@ -48,6 +51,32 @@ app.get('/config', (req, res) => {
 
 function assinarToken(usuario) {
   return jwt.sign({ usuario_id: usuario.id, is_admin: usuario.is_admin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+const QUINZE_DIAS_EM_SEGUNDOS = 15 * 24 * 60 * 60;
+
+// Exige um JWT válido no header Authorization: Bearer <token>. Renovação deslizante:
+// se faltar menos de 15 dias pra expirar, devolve um token novo no header X-New-Token
+// (o frontend precisa checar esse header em toda resposta e substituir o token guardado).
+function autenticar(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Não autenticado.' });
+  }
+  const token = authHeader.slice('Bearer '.length);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.usuario = { id: payload.usuario_id, is_admin: payload.is_admin };
+
+    const segundosRestantes = payload.exp - Math.floor(Date.now() / 1000);
+    if (segundosRestantes < QUINZE_DIAS_EM_SEGUNDOS) {
+      res.setHeader('X-New-Token', assinarToken(req.usuario));
+    }
+
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido ou expirado.' });
+  }
 }
 
 app.post('/registro', async (req, res) => {
@@ -170,7 +199,7 @@ app.get('/jogos', async (req, res) => {
     }
 });
 
-app.post('/jogos', async (req, res) => {
+app.post('/jogos', autenticar, async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
@@ -208,7 +237,7 @@ app.post('/jogos', async (req, res) => {
   }
 });
 
-app.put('/jogos/:id', async (req, res) => {
+app.put('/jogos/:id', autenticar, async (req, res) => {
   const { id } = req.params;
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
@@ -254,7 +283,7 @@ app.put('/jogos/:id', async (req, res) => {
   }
 });
 
-app.delete('/jogos/:id', async (req, res) => {
+app.delete('/jogos/:id', autenticar, async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
     try {
