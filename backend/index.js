@@ -8,6 +8,11 @@ const db = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '30d';
+// Hash "de mentira" pra comparar quando o email não existe — sem isso, bcrypt.compare()
+// só roda quando o usuário é encontrado, e login com email inexistente responde muito
+// mais rápido que senha errada (mesma mensagem de erro, tempo de resposta diferente:
+// um atacante consegue enumerar emails cadastrados só medindo o tempo).
+const DUMMY_HASH = bcrypt.hashSync('senha-de-mentira-so-pra-gastar-tempo-de-cpu', 10);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -78,8 +83,11 @@ app.post('/login', async (req, res) => {
   try {
     const result = await db.query('SELECT id, email, password_hash, is_admin FROM usuarios WHERE email = $1', [email.trim().toLowerCase()]);
     const usuario = result.rows[0];
+    // Roda bcrypt.compare() sempre, mesmo sem usuário (contra o DUMMY_HASH) — o tempo de
+    // resposta fica igual nos dois casos, sem vazar quais emails estão cadastrados.
+    const senhaValida = await bcrypt.compare(password, usuario ? usuario.password_hash : DUMMY_HASH);
     // Mensagem genérica de propósito — não indica se o email existe ou se a senha está errada.
-    if (!usuario || !(await bcrypt.compare(password, usuario.password_hash))) {
+    if (!usuario || !senhaValida) {
       return res.status(401).json({ error: 'Email ou senha inválidos.' });
     }
     res.status(200).json({ token: assinarToken(usuario) });
@@ -267,6 +275,15 @@ app.delete('/jogos/:id', async (req, res) => {
     } finally {
         client.release();
     }
+});
+
+// Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
+// maior que o limite do body-parser) caem na página de erro padrão do Express, que
+// devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
+// res, next) pra o Express reconhecer como error handler, mesmo sem usar "next".
+app.use((err, req, res, next) => {
+  console.error('Erro não tratado:', err);
+  res.status(err.status || 500).json({ error: 'Erro interno do servidor.' });
 });
 
 app.listen(port, () => {
