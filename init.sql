@@ -10,3 +10,15 @@ CREATE TABLE IF NOT EXISTS jogos (
     capa TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Já existentes em produção sem migration registrada; formalizadas aqui pro ambiente de dev bater com o schema real.
+CREATE TABLE IF NOT EXISTS generos (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS jogo_generos (
+    game_id INTEGER NOT NULL REFERENCES jogos(id) ON DELETE CASCADE,
+    genero_id INTEGER NOT NULL REFERENCES generos(id) ON DELETE CASCADE,
+    PRIMARY KEY (game_id, genero_id)
+);
