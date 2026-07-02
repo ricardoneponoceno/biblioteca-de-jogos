@@ -61,23 +61,29 @@ const processFile = async () => {
       continue;
     }
 
-    const query = `
-      INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa)
-      VALUES($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (titulo) DO NOTHING; 
-    `;
-    
     const values = [
       titulo.trim(),
       plataforma.trim(),
       parseDate(lancamento),
       parseGameplay(gameplay),
-      parseMetacritic(metacritic), // CORREÇÃO: Usa a nova função segura
+      parseMetacritic(metacritic),
       capa ? capa.trim() : null
     ];
 
     try {
-      await db.query(query, values);
+      // titulo não é mais UNIQUE (remakes de mesmo nome são permitidos), então
+      // não dá pra usar ON CONFLICT (titulo). Como este seed traz dados legados
+      // de títulos únicos, a idempotência vem de checar existência por título.
+      const existe = await db.query('SELECT 1 FROM jogos WHERE titulo = $1 LIMIT 1', [titulo.trim()]);
+      if (existe.rowCount > 0) {
+        console.log(`- Jogo já existe, ignorado: ${titulo}`);
+        continue;
+      }
+      await db.query(
+        `INSERT INTO jogos(titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa)
+         VALUES($1, $2, $3, $4, $5, $6)`,
+        values
+      );
       console.log(`- Jogo importado: ${titulo}`);
     } catch (err) {
       console.error(`Erro ao importar o jogo "${titulo}":`, err.message);
