@@ -66,6 +66,51 @@
     
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
+    // Decodifica o payload de um JWT sem verificar assinatura — só pra ler is_admin/
+    // usuario_id no cliente. A verificação de verdade é sempre feita pelo backend.
+    function decodeJwt(token) {
+      try {
+        const payload = token.split('.')[1];
+        return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Header Authorization só nas chamadas pro NOSSO backend — não pros proxies
+    // RAWG/HLTB (outra origem; anexar um header customizado lá geraria preflight
+    // de CORS desnecessário e eles nem esperam/usam esse header).
+    axios.interceptors.request.use((config) => {
+      const token = localStorage.getItem('gameLibToken');
+      if (token && config.url && config.url.startsWith(BACKEND_URL)) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+
+    axios.interceptors.response.use(
+      (response) => {
+        // Renovação deslizante: se o backend mandou token novo, troca o guardado.
+        const novoToken = response.headers['x-new-token'];
+        if (novoToken) localStorage.setItem('gameLibToken', novoToken);
+        return response;
+      },
+      (error) => {
+        const url = (error.config && error.config.url) || '';
+        const isOurBackend = url.startsWith(BACKEND_URL);
+        // /login e /registro também respondem 401/400 em caso de credencial errada —
+        // isso não é "sessão expirou", é a própria tela de login tratando o erro dela.
+        const isAuthEndpoint = url.endsWith('/login') || url.endsWith('/registro');
+        if (isOurBackend && !isAuthEndpoint && error.response && error.response.status === 401) {
+          // Token inválido/expirado numa rota protegida — desloga e recarrega pra limpar todo o estado.
+          localStorage.removeItem('gameLibToken');
+          localStorage.removeItem('gameLibEmail');
+          window.location.reload();
+        }
+        return Promise.reject(error);
+      }
+    );
+
     function GameCard({ jogo, onEdit, onDelete, isAdmin }) {
       const formatarGameplay = (minutos) => {
         if (!minutos) return 'N/A';
@@ -365,6 +410,58 @@
       );
     }
     
+    function AuthModal({ onSuccess, onCancel }) {
+      const [mode, setMode] = useState('login');
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [erro, setErro] = useState('');
+      const [enviando, setEnviando] = useState(false);
+
+      const trocarModo = (m) => { setMode(m); setErro(''); };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setErro(''); setEnviando(true);
+        try {
+          const rota = mode === 'login' ? 'login' : 'registro';
+          const res = await axios.post(`${BACKEND_URL}/${rota}`, { email, password });
+          localStorage.setItem('gameLibToken', res.data.token);
+          localStorage.setItem('gameLibEmail', email.trim().toLowerCase());
+          onSuccess();
+        } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao processar.');
+        } finally {
+          setEnviando(false);
+        }
+      };
+
+      return (
+        <div className="modal-backdrop p-4">
+          <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-700">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="flex gap-2">
+                <button type="button" onClick={() => trocarModo('login')} className={`flex-1 py-2 rounded-lg text-sm font-semibold ${mode === 'login' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Entrar</button>
+                <button type="button" onClick={() => trocarModo('registro')} className={`flex-1 py-2 rounded-lg text-sm font-semibold ${mode === 'registro' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Criar conta</button>
+              </div>
+              {erro && <div className="px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">{erro}</div>}
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-300">Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-300">Senha</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+                <button type="submit" disabled={enviando} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg">{enviando ? 'Enviando...' : (mode === 'login' ? 'Entrar' : 'Criar conta')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [jogos, setJogos] = useState([]);
       const [totalJogos, setTotalJogos] = useState(0);
@@ -375,18 +472,32 @@
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingGame, setEditingGame] = useState(null);
       const [isAdmin, setIsAdmin] = useState(false);
+      const [usuarioEmail, setUsuarioEmail] = useState(null);
+      const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
       const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
 
       useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('mode') === 'admin') {
-            localStorage.setItem('gameLibAdmin', 'true');
-            setIsAdmin(true);
-            window.history.replaceState({}, document.title, window.location.pathname);
-        } else if (localStorage.getItem('gameLibAdmin') === 'true') {
-            setIsAdmin(true);
+        const token = localStorage.getItem('gameLibToken');
+        const payload = token && decodeJwt(token);
+        if (payload) {
+          setIsAdmin(!!payload.is_admin);
+          setUsuarioEmail(localStorage.getItem('gameLibEmail'));
         }
       }, []);
+
+      const handleAuthSuccess = () => {
+        const payload = decodeJwt(localStorage.getItem('gameLibToken'));
+        setIsAdmin(!!(payload && payload.is_admin));
+        setUsuarioEmail(localStorage.getItem('gameLibEmail'));
+        setIsAuthModalOpen(false);
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('gameLibToken');
+        localStorage.removeItem('gameLibEmail');
+        setIsAdmin(false);
+        setUsuarioEmail(null);
+      };
 
       useEffect(() => {
         const fetchInitialData = async () => {
@@ -447,7 +558,17 @@
                 )}
               </p>
             </div>
-            {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar Jogo</button>}
+            <div className="flex items-center gap-3">
+              {usuarioEmail ? (
+                <React.Fragment>
+                  <span className="text-sm text-gray-400 hidden sm:inline">{usuarioEmail}</span>
+                  <button onClick={handleLogout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Sair</button>
+                </React.Fragment>
+              ) : (
+                <button onClick={() => setIsAuthModalOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Entrar</button>
+              )}
+              {isAdmin && <button onClick={() => {setEditingGame(null); setIsModalOpen(true);}} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar Jogo</button>}
+            </div>
           </header>
 
           <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
@@ -477,6 +598,7 @@
           )}
 
           {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={()=>{setIsModalOpen(false);setEditingGame(null);}} apiConfig={apiConfig} allGeneros={allGeneros} />}
+          {isAuthModalOpen && <AuthModal onSuccess={handleAuthSuccess} onCancel={() => setIsAuthModalOpen(false)} />}
         </div>
       );
     }
