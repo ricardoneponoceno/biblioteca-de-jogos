@@ -121,6 +121,8 @@
       const [selected, setSelected] = useState(null);
       const [fields, setFields] = useState({});
       const [link, setLink] = useState('');
+      const [saveError, setSaveError] = useState('');
+      const [saving, setSaving] = useState(false);
 
       useEffect(() => {
         if (jogo) {
@@ -137,7 +139,17 @@
 
       const handleChange = (e) => setFormData(p => Object.assign({}, p, { [e.target.name]: e.target.value }));
       const handleGeneroChange = (gId) => setFormData(p => Object.assign({}, p, { generos: p.generos.includes(gId) ? p.generos.filter(id => id !== gId) : p.generos.concat([gId]) }));
-      const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSaveError(''); setSaving(true);
+        try {
+          await onSave(formData);
+        } catch (err) {
+          setSaveError((err.response && err.response.data && err.response.data.error) || 'Erro ao salvar.');
+        } finally {
+          setSaving(false);
+        }
+      };
 
       const baseUrl = source === 'rawg' ? apiConfig.rawgApiUrl : apiConfig.hltbApiUrl;
       const resetSearch = () => { setResults([]); setSelected(null); setSearchMsg(''); };
@@ -218,15 +230,16 @@
             { key: 'capa', label: 'Capa', val: selected && selected.image_url ? 'imagem' : null } ];
       const otherLinked = source === 'rawg' ? formData.hltb_id : formData.rawg_id;
       const otherLabel = source === 'rawg' ? 'HLTB' : 'RAWG';
-      const badge = (label, on) => <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${on ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-gray-700 text-gray-500'}`}>{label}{on ? ' ✓' : ''}</span>;
+      const badge = (label, id) => <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${id ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-gray-700 text-gray-500'}`}>{label}{id ? ` ✓ ${id}` : ''}</span>;
 
       return (
         <div className="modal-backdrop p-4">
           <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-gray-700 flex flex-col max-h-[92vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <h2 className="text-2xl font-bold text-white">{jogo ? 'Editar Jogo' : 'Adicionar Jogo ao Catálogo'}</h2>
-              <div className="flex items-center gap-2">{badge('RAWG', !!formData.rawg_id)}{badge('HLTB', !!formData.hltb_id)}</div>
+              <div className="flex items-center gap-2">{badge('RAWG', formData.rawg_id)}{badge('HLTB', formData.hltb_id)}</div>
             </div>
+            {saveError && <div className="mx-6 mt-4 px-4 py-2.5 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">{saveError}</div>}
 
             <div className="grid grid-cols-1 md:grid-cols-2 overflow-hidden flex-grow">
               <form onSubmit={handleSubmit} id="game-form" className="p-6 overflow-y-auto space-y-4 border-b md:border-b-0 md:border-r border-gray-700">
@@ -345,7 +358,7 @@
 
             <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
               <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
-              <button type="submit" form="game-form" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">Salvar</button>
+              <button type="submit" form="game-form" disabled={saving} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg transition-all transform hover:scale-105">{saving ? 'Salvando...' : 'Salvar'}</button>
             </div>
           </div>
         </div>
@@ -401,18 +414,16 @@
       
       const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
       const handleSaveGame = async (gameData) => {
+        // Erro não é capturado aqui de propósito: propaga pro GameFormModal, que
+        // exibe inline (em vez do alert() nativo de antes) sem fechar o modal.
         const data = { ...gameData, gameplay_minutos: gameData.gameplay_horas ? parseInt(gameData.gameplay_horas, 10)*60 : null, metacritic: gameData.metacritic ? parseInt(gameData.metacritic, 10) : null };
         delete data.gameplay_horas;
-        try {
-          if (editingGame) {
-             await axios.put(`${BACKEND_URL}/jogos/${editingGame.id}`, data);
-          } else {
-             await axios.post(`${BACKEND_URL}/jogos`, data);
-          }
-          setIsModalOpen(false); setEditingGame(null); fetchJogos(true);
-        } catch (err) { 
-           alert((err.response && err.response.data && err.response.data.error) || "Erro ao salvar."); 
+        if (editingGame) {
+           await axios.put(`${BACKEND_URL}/jogos/${editingGame.id}`, data);
+        } else {
+           await axios.post(`${BACKEND_URL}/jogos`, data);
         }
+        setIsModalOpen(false); setEditingGame(null); fetchJogos(true);
       };
 
       const handleDeleteGame = async (jogo) => {
