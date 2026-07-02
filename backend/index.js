@@ -2,7 +2,12 @@
 require('dotenv').config({ path: './.env' });
 const express = require('express');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const db = require('./db');
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = '30d';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -34,6 +39,54 @@ app.get('/config', (req, res) => {
     hltbApiUrl: process.env.HLTB_API_URL,
     rawgApiUrl: process.env.RAWG_API_URL,
   });
+});
+
+function assinarToken(usuario) {
+  return jwt.sign({ usuario_id: usuario.id, is_admin: usuario.is_admin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+app.post('/registro', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, 10);
+    const result = await db.query(
+      'INSERT INTO usuarios(email, password_hash) VALUES ($1, $2) RETURNING id, email, is_admin',
+      [email.trim().toLowerCase(), password_hash]
+    );
+    const usuario = result.rows[0];
+    res.status(201).json({ token: assinarToken(usuario) });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Esse email já está cadastrado.' });
+    }
+    console.error('Erro ao registrar usuário:', err);
+    res.status(500).json({ error: 'Erro ao registrar usuário.' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+  }
+  try {
+    const result = await db.query('SELECT id, email, password_hash, is_admin FROM usuarios WHERE email = $1', [email.trim().toLowerCase()]);
+    const usuario = result.rows[0];
+    // Mensagem genérica de propósito — não indica se o email existe ou se a senha está errada.
+    if (!usuario || !(await bcrypt.compare(password, usuario.password_hash))) {
+      return res.status(401).json({ error: 'Email ou senha inválidos.' });
+    }
+    res.status(200).json({ token: assinarToken(usuario) });
+  } catch (err) {
+    console.error('Erro ao fazer login:', err);
+    res.status(500).json({ error: 'Erro ao fazer login.' });
+  }
 });
 
 app.get('/generos', async (req, res) => {
