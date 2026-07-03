@@ -483,6 +483,15 @@ app.post('/contas-plataforma', autenticar, async (req, res) => {
 
 const STEAM_API_KEY = process.env.STEAM_API_KEY;
 
+// Só uma importação em andamento por usuário — a rotina limpa e repopula
+// importacoes_pendentes, não é seguro duas chamadas concorrentes fazendo isso
+// ao mesmo tempo (dois cliques, duas abas). Trava em memória (não em
+// transação de banco) de propósito: a chamada pra Steam é externa e pode
+// demorar, e segurar uma transação aberta por todo esse tempo prenderia uma
+// conexão do pool sem necessidade. Suficiente pra este app (processo único,
+// sem clustering).
+const importacoesEmAndamento = new Set();
+
 // Fase 4c: importa a biblioteca da Steam pra importacoes_pendentes (staging).
 // Não toca em jogos nem cria posse aqui — só grava o material bruto pra
 // revisão humana depois (Fase 4d/4f). Checagem em duas camadas, escopada por
@@ -493,6 +502,10 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
   if (!STEAM_API_KEY) {
     return res.status(500).json({ error: 'Importador da Steam não configurado (falta STEAM_API_KEY).' });
   }
+  if (importacoesEmAndamento.has(req.usuario.id)) {
+    return res.status(409).json({ error: 'Já existe uma importação em andamento pra essa conta. Aguarde terminar.' });
+  }
+  importacoesEmAndamento.add(req.usuario.id);
   try {
     const contaResult = await db.query(
       `SELECT ca.identificador_externo, ca.plataforma_id
@@ -514,14 +527,15 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
       return res.status(422).json({ error: 'Não foi possível ler a biblioteca da Steam. Confira se o perfil e os "detalhes do jogo" estão públicos nas configurações de privacidade da Steam.' });
     }
 
-    // Limpa tudo que sobrou dessa plataforma antes de popular do zero — evita
-    // pendente obsoleto (capa/dado de uma rodada anterior) coexistindo com o
-    // import fresco, se alguém rodar "Importar agora" mais de uma vez sem sair
-    // do modo importação entre uma rodada e outra. Só depois de confirmar que
-    // a Steam respondeu (jogosSteam acima) — assim uma falha na chamada não
-    // apaga pendentes válidos à toa. O que já virou posse não se perde, é isso
-    // que garante a idempotência mesmo com a staging zerada.
-    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1 AND plataforma_id = $2', [req.usuario.id, conta.plataforma_id]);
+    // Limpa TUDO que sobrou do usuário (qualquer plataforma, não só Steam)
+    // antes de popular do zero — evita pendente obsoleto (capa/dado de uma
+    // rodada anterior, dessa ou de outra plataforma) coexistindo com o import
+    // fresco. Se a pessoa ainda quiser ver os pendentes de outra plataforma,
+    // é só rodar a importação daquela de novo — nada se perde de verdade, o
+    // que já virou posse continua fora da lista graças à checagem abaixo. Só
+    // depois de confirmar que a Steam respondeu (jogosSteam acima) — assim
+    // uma falha na chamada não apaga pendentes válidos à toa.
+    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1', [req.usuario.id]);
 
     let novosPendentes = 0;
     for (const jogo of jogosSteam) {
@@ -552,6 +566,8 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
   } catch (err) {
     console.error('Erro ao importar da Steam:', err);
     res.status(500).json({ error: 'Erro ao importar da Steam.' });
+  } finally {
+    importacoesEmAndamento.delete(req.usuario.id);
   }
 });
 
