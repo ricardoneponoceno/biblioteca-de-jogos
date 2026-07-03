@@ -66,6 +66,10 @@
     
     const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
 
+    // Usado em toda miniatura de capa que pode vir de fonte externa (Steam,
+    // RAWG, HLTB) — cai num placeholder se a URL não carregar.
+    const capaFallback = (e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/100x140/1e293b/ffffff?text=?'; };
+
     // Decodifica o payload de um JWT sem verificar assinatura — só pra ler is_admin/
     // usuario_id no cliente. A verificação de verdade é sempre feita pelo backend.
     function decodeJwt(token) {
@@ -156,7 +160,7 @@
       );
     }
 
-    function GameFormModal({ jogo, onSave, onCancel, apiConfig, allGeneros }) {
+    function GameFormModal({ jogo, onSave, onCancel, apiConfig, allGeneros, tituloInicial, plataformaInicial }) {
       const emptyForm = { titulo: '', plataforma: '', lancamento: '', gameplay_horas: '', metacritic: '', capa: '', generos: [], rawg_id: null, hltb_id: null };
       const [formData, setFormData] = useState(emptyForm);
       const titleInputRef = useRef(null);
@@ -180,11 +184,22 @@
           const generoIds = allGeneros.filter(g => jogo.generos && jogo.generos.includes(g.name)).map(g => g.id);
           setFormData(Object.assign({}, emptyForm, jogo, { lancamento: lancamentoFormatado, gameplay_horas: gameplayEmHoras, generos: generoIds }));
         } else {
-          setFormData(emptyForm);
+          setFormData(Object.assign({}, emptyForm, { titulo: tituloInicial || '', plataforma: plataformaInicial || '' }));
         }
       }, [jogo, allGeneros]);
 
       useEffect(() => { setTimeout(() => { if (titleInputRef.current) titleInputRef.current.focus(); }, 100); }, []);
+
+      // Vindo da resolução de uma importação pendente (Fase 4f da #4): o título já
+      // é conhecido, então busca sozinho ao abrir — sem isso, precisaria clicar em
+      // "Buscar" manualmente pra achar o candidato certo na fonte.
+      useEffect(() => {
+        if (!jogo && tituloInicial) {
+          setQuery(tituloInicial);
+          runSearch(tituloInicial);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
 
       const handleChange = (e) => setFormData(p => Object.assign({}, p, { [e.target.name]: e.target.value }));
       const handleGeneroChange = (gId) => setFormData(p => Object.assign({}, p, { generos: p.generos.includes(gId) ? p.generos.filter(id => id !== gId) : p.generos.concat([gId]) }));
@@ -219,8 +234,8 @@
         return '';
       };
 
-      const runSearch = async () => {
-        const q = query.trim();
+      const runSearch = async (queryOverride) => {
+        const q = (queryOverride !== undefined ? queryOverride : query).trim();
         if (!q || !baseUrl) return;
         setSearching(true); resetSearch();
         try {
@@ -472,16 +487,15 @@
     // delega o cadastro canônico pro GameFormModal já existente (is_admin) —
     // ao voltar de lá com um jogo novo criado, App reabre este modal com o
     // jogo já pré-selecionado (jogoInicial), pra completar o passo da posse.
-    function AdicionarPosseModal({ onAdded, onCancel, onCadastrarNovo, plataformas, jogoInicial }) {
-      const [query, setQuery] = useState('');
+    // Busca no catálogo (GET /jogos) + seleção de um candidato — usado tanto
+    // pelo fluxo de adicionar posse quanto pela resolução de importações
+    // pendentes (Fase 4f da #4). Self-contained: gerencia sua própria busca,
+    // só avisa o pai via onSelect quando um candidato é escolhido.
+    function BuscaJogoExistente({ onSelect, queryInicial }) {
+      const [query, setQuery] = useState(queryInicial || '');
       const [results, setResults] = useState([]);
       const [searching, setSearching] = useState(false);
       const [searched, setSearched] = useState(false);
-      const [selectedJogo, setSelectedJogo] = useState(jogoInicial || null);
-      const [plataformaId, setPlataformaId] = useState('');
-      const [dataAquisicao, setDataAquisicao] = useState('');
-      const [saveError, setSaveError] = useState('');
-      const [saving, setSaving] = useState(false);
 
       useEffect(() => {
         const q = query.trim();
@@ -501,7 +515,45 @@
         return () => clearTimeout(h);
       }, [query]);
 
-      const capaFallback = (e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/100x140/1e293b/ffffff?text=?'; };
+      return (
+        <React.Fragment>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar jogo no catálogo..."
+            className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+          />
+          {searching && <div className="text-cyan-400 text-sm animate-pulse">Buscando...</div>}
+          {!searching && searched && results.length === 0 && (
+            <div className="text-sm text-gray-400">Nenhum jogo encontrado no catálogo.</div>
+          )}
+          <div className="space-y-2">
+            {results.map((j) => (
+              <button
+                type="button"
+                key={j.id}
+                onClick={() => onSelect(j)}
+                className="w-full flex gap-3 items-center text-left bg-gray-900 hover:bg-gray-700 border border-gray-700 rounded-lg p-2"
+              >
+                <img src={j.capa} className="w-10 h-14 object-cover rounded flex-shrink-0" onError={capaFallback} />
+                <div className="min-w-0">
+                  <div className="text-sm text-white truncate">{j.titulo}</div>
+                  <div className="text-xs text-gray-400">{j.lancamento ? new Date(j.lancamento).getFullYear() : 'sem data'}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    function AdicionarPosseModal({ onAdded, onCancel, onCadastrarNovo, plataformas, jogoInicial }) {
+      const [selectedJogo, setSelectedJogo] = useState(jogoInicial || null);
+      const [plataformaId, setPlataformaId] = useState('');
+      const [dataAquisicao, setDataAquisicao] = useState('');
+      const [saveError, setSaveError] = useState('');
+      const [saving, setSaving] = useState(false);
 
       const handleAdicionar = async (e) => {
         e.preventDefault();
@@ -531,33 +583,7 @@
             <div className="p-6 overflow-y-auto space-y-4 flex-grow">
               {!selectedJogo ? (
                 <React.Fragment>
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Buscar jogo no catálogo..."
-                    className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
-                  />
-                  {searching && <div className="text-cyan-400 text-sm animate-pulse">Buscando...</div>}
-                  {!searching && searched && results.length === 0 && (
-                    <div className="text-sm text-gray-400">Nenhum jogo encontrado no catálogo.</div>
-                  )}
-                  <div className="space-y-2">
-                    {results.map((j) => (
-                      <button
-                        type="button"
-                        key={j.id}
-                        onClick={() => { setSelectedJogo(j); setSaveError(''); }}
-                        className="w-full flex gap-3 items-center text-left bg-gray-900 hover:bg-gray-700 border border-gray-700 rounded-lg p-2"
-                      >
-                        <img src={j.capa} className="w-10 h-14 object-cover rounded flex-shrink-0" onError={capaFallback} />
-                        <div className="min-w-0">
-                          <div className="text-sm text-white truncate">{j.titulo}</div>
-                          <div className="text-xs text-gray-400">{j.lancamento ? new Date(j.lancamento).getFullYear() : 'sem data'}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  <BuscaJogoExistente onSelect={(j) => { setSelectedJogo(j); setSaveError(''); }} />
                   <button type="button" onClick={onCadastrarNovo} className="w-full text-sm text-blue-400 hover:text-blue-300 underline pt-2">
                     Não encontrei, cadastrar jogo novo
                   </button>
@@ -699,18 +725,70 @@
       );
     }
 
+    // Fase 4f da #4: resolve uma importação pendente — busca-e-seleção de jogo
+    // já existente (reaproveita BuscaJogoExistente), ou "não encontrei" delega
+    // pro GameFormModal de sempre (pré-preenchido, ver GameFormModal). Não
+    // pergunta plataforma/data: já são conhecidas, vieram da importação.
+    function ResolverImportacaoModal({ pendente, onResolvido, onCancel, onCadastrarNovo }) {
+      const [resolvendo, setResolvendo] = useState(false);
+      const [erro, setErro] = useState('');
+
+      const resolver = async (jogoId) => {
+        setErro(''); setResolvendo(true);
+        try {
+          await axios.patch(`${BACKEND_URL}/importacoes-pendentes/${pendente.id}`, { jogo_id: jogoId });
+          onResolvido();
+        } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao resolver.');
+          setResolvendo(false);
+        }
+      };
+
+      return (
+        <div className="modal-backdrop p-4">
+          <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-700 flex flex-col max-h-[85vh]">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-700">
+              <img src={pendente.capa} className="w-10 h-14 object-cover rounded flex-shrink-0" onError={capaFallback} />
+              <h2 className="text-lg font-bold text-white truncate">{pendente.titulo}</h2>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4 flex-grow">
+              {erro && <div className="px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">{erro}</div>}
+              {resolvendo ? (
+                <div className="text-cyan-400 text-sm animate-pulse">Resolvendo...</div>
+              ) : (
+                <React.Fragment>
+                  <BuscaJogoExistente queryInicial={pendente.titulo} onSelect={(j) => resolver(j.id)} />
+                  <button type="button" onClick={onCadastrarNovo} className="w-full text-sm text-blue-400 hover:text-blue-300 underline pt-2">
+                    Não encontrei, cadastrar jogo novo
+                  </button>
+                </React.Fragment>
+              )}
+            </div>
+            <div className="bg-gray-900 p-4 flex justify-end border-t border-gray-700">
+              <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       // Fase 2d: a index passa a mostrar a biblioteca pessoal (minhas posses),
       // não mais o catálogo inteiro — cada item já vem com o dado do jogo
       // agregado (GET /biblioteca), mais posse_id/plataforma_nome/plataforma_id.
       const [biblioteca, setBiblioteca] = useState([]);
-      // Fase 2g: modo catálogo (admin) — troca a fonte de dado pra GET /jogos
-      // (o catálogo inteiro, não só minhas posses), com editar/excluir mirando
-      // o jogo canônico. Só entra quem tem is_admin (o toggle nem aparece pra
-      // quem não tem).
-      const [modoCatalogo, setModoCatalogo] = useState(false);
+      // Fase 2g/4f: três modos da index — 'biblioteca' (padrão), 'catalogo'
+      // (admin, GET /jogos) e 'importacao' (revisão de importacoes_pendentes).
+      // Só um ativo por vez; catálogo exige is_admin, os outros dois não.
+      const [modo, setModo] = useState('biblioteca');
       const [catalogo, setCatalogo] = useState([]);
       const [totalCatalogo, setTotalCatalogo] = useState(0);
+      const [pendentes, setPendentes] = useState([]);
+      const [resolvendoPendente, setResolvendoPendente] = useState(null);
+      // pendente que está esperando o cadastro de um jogo novo terminar (fluxo
+      // "não encontrei" da resolução) pra poder ser resolvido com o jogo_id
+      // recém-criado — ver handleSaveGame.
+      const [pendenteParaResolverAposCadastro, setPendenteParaResolverAposCadastro] = useState(null);
       const [plataformas, setPlataformas] = useState([]);
       const [allGeneros, setAllGeneros] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -768,7 +846,7 @@
       // exige token, e chamar sem ele derrubaria o interceptor de 401 (que
       // desloga/recarrega em qualquer 401 fora de /login e /registro).
       const fetchBiblioteca = useCallback(async (bg = false) => {
-        if (modoCatalogo) return; // catálogo tem seu próprio fetch, abaixo
+        if (modo !== 'biblioteca') return; // catálogo/importação têm seus próprios fetches
         if (!usuarioEmail) { setBiblioteca([]); if (!bg) setLoading(false); return; }
         try {
           if (!BACKEND_URL) return;
@@ -776,7 +854,7 @@
           const res = await axios.get(`${BACKEND_URL}/biblioteca`);
           setBiblioteca(res.data); setError(null);
         } catch (err) { setError("Falha ao carregar biblioteca."); } finally { if (!bg) setLoading(false); }
-      }, [usuarioEmail, modoCatalogo]);
+      }, [usuarioEmail, modo]);
 
       useEffect(() => { fetchBiblioteca(); }, [fetchBiblioteca]);
 
@@ -784,7 +862,7 @@
       // suporta) — o catálogo inteiro (328+ jogos) não escala bem filtrando
       // no cliente como a biblioteca pessoal (2d) faz.
       const fetchCatalogo = useCallback(async (bg = false) => {
-        if (!modoCatalogo) return;
+        if (modo !== 'catalogo') return;
         try {
           if (!BACKEND_URL) return;
           if (!bg) setLoading(true);
@@ -793,18 +871,39 @@
           const res = await axios.get(`${BACKEND_URL}/jogos?${params.toString()}`);
           setCatalogo(res.data.filteredGames); setTotalCatalogo(res.data.totalGames); setError(null);
         } catch (err) { setError("Falha ao carregar catálogo."); } finally { if (!bg) setLoading(false); }
-      }, [filters, modoCatalogo]);
+      }, [filters, modo]);
 
       useEffect(() => { const h = setTimeout(() => fetchCatalogo(), 500); return () => clearTimeout(h); }, [filters, fetchCatalogo]);
 
-      const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
+      // Fase 4f: lista os pendentes do usuário — GET /importacoes-pendentes já
+      // filtra pelo dono e por jogo_id IS NULL (só o que ainda não foi resolvido).
+      const fetchPendentes = useCallback(async (bg = false) => {
+        if (modo !== 'importacao') return;
+        try {
+          if (!BACKEND_URL) return;
+          if (!bg) setLoading(true);
+          const res = await axios.get(`${BACKEND_URL}/importacoes-pendentes`);
+          setPendentes(res.data); setError(null);
+        } catch (err) { setError("Falha ao carregar importações pendentes."); } finally { if (!bg) setLoading(false); }
+      }, [modo]);
 
-      // Reseta os filtros ao trocar de modo — o dropdown de plataforma lista
+      useEffect(() => { fetchPendentes(); }, [fetchPendentes]);
+
+      const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
+      const filtrosVazios = { titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' };
+
+      // Troca de modo sempre reseta os filtros — o dropdown de plataforma lista
       // conjuntos diferentes em cada modo (plataformas reais da posse vs. o
       // texto livre legado de jogos.plataforma), um valor não faz sentido no outro.
-      const toggleModoCatalogo = () => {
-        setModoCatalogo(m => !m);
-        setFilters({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
+      // Saindo do modo importação: limpa tudo que sobrou na staging do usuário
+      // (resolvido ou não — não faz diferença, a prova de resolvido já vive na
+      // posse). Reabrir depois é só rodar a sincronização de novo.
+      const irParaModo = async (m) => {
+        if (modo === 'importacao' && m !== 'importacao') {
+          try { await axios.delete(`${BACKEND_URL}/importacoes-pendentes`); } catch (err) { /* não bloqueia a saída por causa disso */ }
+        }
+        setModo(m);
+        setFilters(filtrosVazios);
       };
 
       const handleSaveGame = async (gameData) => {
@@ -823,6 +922,15 @@
         if (jogoCriado && novoJogoParaPosse) {
           setJogoParaPosseInicial(jogoCriado);
           setIsAddModalOpen(true);
+        }
+        if (jogoCriado && pendenteParaResolverAposCadastro) {
+          try {
+            await axios.patch(`${BACKEND_URL}/importacoes-pendentes/${pendenteParaResolverAposCadastro.id}`, { jogo_id: jogoCriado.id });
+          } catch (err) {
+            alert('Jogo cadastrado, mas houve erro ao vincular à importação pendente.');
+          }
+          setPendenteParaResolverAposCadastro(null);
+          fetchPendentes(true);
         }
         setNovoJogoParaPosse(false);
         fetchBiblioteca(true);
@@ -843,7 +951,16 @@
         }
       };
 
-      const handleDeleteCard = modoCatalogo ? handleExcluirJogoCanonico : handleRemoverPosse;
+      // Descarta um pendente sem resolver — a pessoa não quer catalogar aquele
+      // item. Não é "nunca mais importar": se ainda não tem posse, uma
+      // sincronização futura o recria.
+      const handleDescartarPendente = async (item) => {
+        if (window.confirm(`Descartar "${item.titulo}" da lista de importação? Pode reimportar depois, rodando a sincronização de novo.`)) {
+          try { await axios.delete(`${BACKEND_URL}/importacoes-pendentes/${item.id}`); fetchPendentes(true); } catch (err) { alert("Erro ao descartar."); }
+        }
+      };
+
+      const handleDeleteCard = modo === 'catalogo' ? handleExcluirJogoCanonico : modo === 'importacao' ? handleDescartarPendente : handleRemoverPosse;
 
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
@@ -861,8 +978,12 @@
         .filter(item => !filters.metacritic_max || item.metacritic <= filters.metacritic_max)
         .map(item => ({ ...item, id: item.jogo_id }));
 
-      const cardItems = modoCatalogo ? catalogo : itemsBiblioteca;
-      const totalItems = modoCatalogo ? totalCatalogo : biblioteca.length;
+      // Pendentes só filtram por título (client-side) — não têm gênero/gameplay/
+      // metacritic ainda (só se sabe isso depois de resolvido).
+      const itemsPendentes = pendentes.filter(item => !filters.titulo || item.titulo.toLowerCase().includes(filters.titulo.toLowerCase()));
+
+      const cardItems = modo === 'catalogo' ? catalogo : modo === 'importacao' ? itemsPendentes : itemsBiblioteca;
+      const totalItems = modo === 'catalogo' ? totalCatalogo : modo === 'importacao' ? pendentes.length : biblioteca.length;
 
       const plataformasComJogo = Array.from(new Set(biblioteca.map(item => item.plataforma_nome))).sort();
 
@@ -874,9 +995,9 @@
               {usuarioEmail && (
                 <p className="text-gray-400 mt-2">
                   {Object.values(filters).some(v => v !== '') ? (
-                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{totalItems}</span> jogos{modoCatalogo ? ' no catálogo' : ''}.</span>
+                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{totalItems}</span> jogos{modo === 'catalogo' ? ' no catálogo' : modo === 'importacao' ? ' pendentes' : ''}.</span>
                   ) : (
-                    <span>Atualmente com <span className="font-bold text-cyan-400">{totalItems}</span> jogos {modoCatalogo ? 'no catálogo' : 'na sua biblioteca'}.</span>
+                    <span>Atualmente com <span className="font-bold text-cyan-400">{totalItems}</span> jogos {modo === 'catalogo' ? 'no catálogo' : modo === 'importacao' ? 'pendentes de revisão' : 'na sua biblioteca'}.</span>
                   )}
                 </p>
               )}
@@ -890,9 +1011,11 @@
               ) : (
                 <button onClick={() => setIsAuthModalOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Entrar</button>
               )}
-              {isAdmin && <button onClick={toggleModoCatalogo} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">{modoCatalogo ? 'Voltar pra minha biblioteca' : 'Ver catálogo completo'}</button>}
-              {usuarioEmail && !modoCatalogo && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
-              {usuarioEmail && !modoCatalogo && <button onClick={() => setIsImportarSteamOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Importar da Steam</button>}
+              {modo === 'biblioteca' && isAdmin && <button onClick={() => irParaModo('catalogo')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Ver catálogo completo</button>}
+              {modo === 'biblioteca' && usuarioEmail && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
+              {modo === 'biblioteca' && usuarioEmail && <button onClick={() => setIsImportarSteamOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Importar da Steam</button>}
+              {modo === 'biblioteca' && usuarioEmail && <button onClick={() => irParaModo('importacao')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Ver pendentes de importação</button>}
+              {modo !== 'biblioteca' && <button onClick={() => irParaModo('biblioteca')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Voltar pra minha biblioteca</button>}
             </div>
           </header>
 
@@ -905,34 +1028,56 @@
           ) : (
             <React.Fragment>
               <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-                  <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
-                    <option value="">Plataformas</option>{(modoCatalogo ? PLATAFORMAS : plataformasComJogo).map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
-                    <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
-                  </select>
-                  <div className="flex gap-2">
-                    <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-                    <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                {modo === 'importacao' ? (
+                  <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar nos pendentes..." className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                    <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                      <option value="">Plataformas</option>{(modo === 'catalogo' ? PLATAFORMAS : plataformasComJogo).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                      <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                    </select>
+                    <div className="flex gap-2">
+                      <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                      <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div className="flex gap-2">
+                      <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                      <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
-                    <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
-                  </div>
-                </div>
+                )}
               </div>
 
               {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-                  {cardItems.length > 0 ? cardItems.map(item => <GameCard key={item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modoCatalogo} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{modoCatalogo ? 'Nenhum jogo encontrado no catálogo.' : (biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.')}</p></div>}
+                  {cardItems.length > 0 ? cardItems.map(item =>
+                    modo === 'importacao' ? (
+                      <div key={item.id} onClick={() => setResolvendoPendente(item)} className="cursor-pointer">
+                        <GameCard jogo={item} onEdit={() => {}} onDelete={handleDeleteCard} isAdmin={false} />
+                      </div>
+                    ) : (
+                      <GameCard key={item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modo === 'catalogo'} />
+                    )
+                  ) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{modo === 'catalogo' ? 'Nenhum jogo encontrado no catálogo.' : modo === 'importacao' ? 'Nada pendente — clique em "Importar da Steam" pra sincronizar.' : (biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.')}</p></div>}
                 </div>
               )}
             </React.Fragment>
           )}
 
-          {isModalOpen && <GameFormModal jogo={editingGame} onSave={handleSaveGame} onCancel={()=>{setIsModalOpen(false);setEditingGame(null);setNovoJogoParaPosse(false);}} apiConfig={apiConfig} allGeneros={allGeneros} />}
+          {isModalOpen && (
+            <GameFormModal
+              jogo={editingGame}
+              tituloInicial={pendenteParaResolverAposCadastro ? pendenteParaResolverAposCadastro.titulo : undefined}
+              plataformaInicial={pendenteParaResolverAposCadastro ? pendenteParaResolverAposCadastro.plataforma_nome : undefined}
+              onSave={handleSaveGame}
+              onCancel={()=>{setIsModalOpen(false);setEditingGame(null);setNovoJogoParaPosse(false);setPendenteParaResolverAposCadastro(null);}}
+              apiConfig={apiConfig}
+              allGeneros={allGeneros}
+            />
+          )}
           {isAuthModalOpen && <AuthModal onSuccess={handleAuthSuccess} onCancel={() => setIsAuthModalOpen(false)} />}
           {isAddModalOpen && (
             <AdicionarPosseModal
@@ -948,6 +1093,14 @@
               plataformaId={(plataformas.find((p) => p.nome === 'Steam') || {}).id}
               onClose={() => setIsImportarSteamOpen(false)}
               onImportado={() => {}}
+            />
+          )}
+          {resolvendoPendente && (
+            <ResolverImportacaoModal
+              pendente={resolvendoPendente}
+              onResolvido={() => { setResolvendoPendente(null); fetchPendentes(true); }}
+              onCancel={() => setResolvendoPendente(null)}
+              onCadastrarNovo={() => { setPendenteParaResolverAposCadastro(resolvendoPendente); setResolvendoPendente(null); setEditingGame(null); setIsModalOpen(true); }}
             />
           )}
         </div>

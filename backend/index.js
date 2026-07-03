@@ -549,7 +549,11 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
 app.get('/importacoes-pendentes', autenticar, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT * FROM importacoes_pendentes WHERE usuario_id = $1 AND jogo_id IS NULL ORDER BY titulo ASC',
+      `SELECT ip.*, p.nome AS plataforma_nome
+       FROM importacoes_pendentes ip
+       JOIN plataformas p ON p.id = ip.plataforma_id
+       WHERE ip.usuario_id = $1 AND ip.jogo_id IS NULL
+       ORDER BY ip.titulo ASC`,
       [req.usuario.id]
     );
     res.status(200).json(result.rows);
