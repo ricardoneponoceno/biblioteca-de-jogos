@@ -437,6 +437,24 @@ app.get('/biblioteca', autenticar, async (req, res) => {
 
 // --- Importador por plataforma — Fase 4b da #4 ---
 
+// Lista as contas de plataforma já vinculadas pelo usuário — usado pelo
+// frontend (4e) pra saber se mostra "vincular" ou "atualizar/importar".
+app.get('/contas-plataforma', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT ca.*, p.nome AS plataforma_nome
+       FROM contas_plataforma ca
+       JOIN plataformas p ON p.id = ca.plataforma_id
+       WHERE ca.usuario_id = $1`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar contas de plataforma:', err);
+    res.status(500).json({ error: 'Erro ao procurar as contas vinculadas.' });
+  }
+});
+
 // Vincula (ou atualiza) a conta externa do usuário numa plataforma. Upsert:
 // vincular de novo com um id diferente corrige, sem precisar de endpoint de
 // editar separado.
