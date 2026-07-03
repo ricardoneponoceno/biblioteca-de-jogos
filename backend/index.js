@@ -514,6 +514,15 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
       return res.status(422).json({ error: 'Não foi possível ler a biblioteca da Steam. Confira se o perfil e os "detalhes do jogo" estão públicos nas configurações de privacidade da Steam.' });
     }
 
+    // Limpa tudo que sobrou dessa plataforma antes de popular do zero — evita
+    // pendente obsoleto (capa/dado de uma rodada anterior) coexistindo com o
+    // import fresco, se alguém rodar "Importar agora" mais de uma vez sem sair
+    // do modo importação entre uma rodada e outra. Só depois de confirmar que
+    // a Steam respondeu (jogosSteam acima) — assim uma falha na chamada não
+    // apaga pendentes válidos à toa. O que já virou posse não se perde, é isso
+    // que garante a idempotência mesmo com a staging zerada.
+    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1 AND plataforma_id = $2', [req.usuario.id, conta.plataforma_id]);
+
     let novosPendentes = 0;
     for (const jogo of jogosSteam) {
       const appid = String(jogo.appid);
