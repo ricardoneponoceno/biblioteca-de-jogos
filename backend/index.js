@@ -7,6 +7,11 @@ const jwt = require('jsonwebtoken');
 const db = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+// Falha cedo, no boot, em vez de subir "saudável" e só quebrar na primeira
+// requisição de auth — sem o segredo, assinar/verificar token é impossível.
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET não definido — configure a variável de ambiente antes de iniciar o servidor.');
+}
 const JWT_EXPIRES_IN = '30d';
 // Hash "de mentira" pra comparar quando o email não existe — sem isso, bcrypt.compare()
 // só roda quando o usuário é encontrado, e login com email inexistente responde muito
@@ -50,7 +55,7 @@ app.get('/config', (req, res) => {
 });
 
 function assinarToken(usuario) {
-  return jwt.sign({ usuario_id: usuario.id, is_admin: usuario.is_admin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign({ usuario_id: usuario.id, is_admin: usuario.is_admin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN, algorithm: 'HS256' });
 }
 
 const QUINZE_DIAS_EM_SEGUNDOS = 15 * 24 * 60 * 60;
@@ -65,7 +70,11 @@ function autenticar(req, res, next) {
   }
   const token = authHeader.slice('Bearer '.length);
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    // algorithms explícito: não deixa o verify aceitar nada além de HS256
+    // (defesa contra algorithm confusion caso um dia se use chave assimétrica).
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    // is_admin do token é só dica de UI (o frontend decodifica pra mostrar/esconder
+    // botões); a autorização de verdade é o apenasAdmin, que relê is_admin do banco.
     req.usuario = { id: payload.usuario_id, is_admin: payload.is_admin };
 
     const segundosRestantes = payload.exp - Math.floor(Date.now() / 1000);
@@ -82,16 +91,28 @@ function autenticar(req, res, next) {
 // Exige que o usuário autenticado (já validado por autenticar()) seja admin. Usado nas
 // rotas que editam o catálogo canônico de jogos — não confundir com o uso normal do app
 // (gerenciar a própria biblioteca), que não exige is_admin nenhum.
-function apenasAdmin(req, res, next) {
-  if (!req.usuario.is_admin) {
-    return res.status(403).json({ error: 'Apenas administradores podem realizar esta ação.' });
+// Relê is_admin do banco em vez de confiar no claim do token: senão uma demoção
+// (is_admin -> false no banco) nunca teria efeito, porque o token antigo — e cada
+// token renovado a partir dele — continuaria dizendo is_admin: true pra sempre.
+async function apenasAdmin(req, res, next) {
+  try {
+    const result = await db.query('SELECT is_admin FROM usuarios WHERE id = $1', [req.usuario.id]);
+    const usuario = result.rows[0];
+    if (!usuario || !usuario.is_admin) {
+      return res.status(403).json({ error: 'Apenas administradores podem realizar esta ação.' });
+    }
+    next();
+  } catch (err) {
+    console.error('Erro ao verificar permissão de admin:', err);
+    res.status(500).json({ error: 'Erro ao verificar permissão.' });
   }
-  next();
 }
 
 app.post('/registro', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) {
+  // typeof antes de qualquer uso: um array (ex: password: ["a","b","c","d","e","f"])
+  // tem .length e passaria na checagem de tamanho, quebrando só lá no bcrypt.
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
   }
   if (password.length < 6) {
@@ -116,7 +137,7 @@ app.post('/registro', async (req, res) => {
 
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) {
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
   }
   try {
