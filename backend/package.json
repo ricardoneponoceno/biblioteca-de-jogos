@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate": "node migrate.js",
-    "seed": "node import.js && node seed-generos.js"
+    "seed": "node import.js && node seed-generos.js && node seed-plataformas.js"
   },
   "keywords": [],
   "author": "",
