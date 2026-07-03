@@ -628,6 +628,20 @@ app.delete('/importacoes-pendentes/:id', autenticar, async (req, res) => {
   }
 });
 
+// Limpa tudo que sobrou na staging do usuário (resolvido ou não) — chamado
+// pelo frontend ao sair do modo importação. Não afeta o que já virou posse
+// (isso é permanente); reabrir depois é só rodar a sincronização de novo, que
+// já ignora o que já foi resolvido.
+app.delete('/importacoes-pendentes', autenticar, async (req, res) => {
+  try {
+    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1', [req.usuario.id]);
+    res.status(204).send();
+  } catch (err) {
+    console.error('Erro ao limpar importações pendentes:', err);
+    res.status(500).json({ error: 'Erro ao limpar as importações pendentes.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
