@@ -79,6 +79,16 @@ function autenticar(req, res, next) {
   }
 }
 
+// Exige que o usuário autenticado (já validado por autenticar()) seja admin. Usado nas
+// rotas que editam o catálogo canônico de jogos — não confundir com o uso normal do app
+// (gerenciar a própria biblioteca), que não exige is_admin nenhum.
+function apenasAdmin(req, res, next) {
+  if (!req.usuario.is_admin) {
+    return res.status(403).json({ error: 'Apenas administradores podem realizar esta ação.' });
+  }
+  next();
+}
+
 app.post('/registro', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -199,7 +209,7 @@ app.get('/jogos', async (req, res) => {
     }
 });
 
-app.post('/jogos', autenticar, async (req, res) => {
+app.post('/jogos', autenticar, apenasAdmin, async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
@@ -237,7 +247,7 @@ app.post('/jogos', autenticar, async (req, res) => {
   }
 });
 
-app.put('/jogos/:id', autenticar, async (req, res) => {
+app.put('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
   const { id } = req.params;
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
@@ -283,7 +293,7 @@ app.put('/jogos/:id', autenticar, async (req, res) => {
   }
 });
 
-app.delete('/jogos/:id', autenticar, async (req, res) => {
+app.delete('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
     try {
