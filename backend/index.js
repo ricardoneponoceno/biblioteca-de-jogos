@@ -408,6 +408,7 @@ app.get('/biblioteca', autenticar, async (req, res) => {
          j.id AS jogo_id,
          j.titulo,
          j.lancamento,
+         j.gameplay_minutos,
          j.metacritic,
          j.capa,
          (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
