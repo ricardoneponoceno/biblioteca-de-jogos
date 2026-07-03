@@ -541,6 +541,57 @@ app.get('/importacoes-pendentes', autenticar, async (req, res) => {
   }
 });
 
+// Fase 4d: resolve uma importação pendente contra um jogo_id — existente
+// (escolhido numa busca) ou recém-criado via POST /jogos. Grava o vínculo no
+// pendente e cria a posse na mesma transação, copiando identificador_externo
+// e plataforma_id (que a importação já sabia, não precisa perguntar de novo).
+app.patch('/importacoes-pendentes/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  const { jogo_id } = req.body;
+  if (!jogo_id) {
+    return res.status(400).json({ error: 'jogo_id é obrigatório.' });
+  }
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const pendenteResult = await client.query(
+      'SELECT * FROM importacoes_pendentes WHERE id = $1 AND usuario_id = $2 FOR UPDATE',
+      [id, req.usuario.id]
+    );
+    const pendente = pendenteResult.rows[0];
+    if (!pendente) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Importação pendente não encontrada.' });
+    }
+    if (pendente.jogo_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Essa importação já foi resolvida.' });
+    }
+
+    await client.query('UPDATE importacoes_pendentes SET jogo_id = $1, resolvido_em = now() WHERE id = $2', [jogo_id, id]);
+    const posseResult = await client.query(
+      `INSERT INTO posses (usuario_id, jogo_id, plataforma_id, identificador_externo)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [req.usuario.id, jogo_id, pendente.plataforma_id, pendente.identificador_externo]
+    );
+    await client.query('COMMIT');
+    res.status(200).json(posseResult.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Você já tem esse jogo cadastrado nessa plataforma.' });
+    }
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Jogo inexistente.' });
+    }
+    console.error('Erro ao resolver importação pendente:', err);
+    res.status(500).json({ error: 'Erro ao resolver a importação.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
