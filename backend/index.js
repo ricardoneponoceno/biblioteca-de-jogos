@@ -337,6 +337,62 @@ app.delete('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
     }
 });
 
+// --- Biblioteca pessoal (posses) — Fase 2b da #1 ---
+
+app.get('/plataformas', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM plataformas ORDER BY nome ASC');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar plataformas:', err);
+    res.status(500).json({ error: 'Erro ao procurar as plataformas.' });
+  }
+});
+
+// Sem apenasAdmin: gerir a própria biblioteca é ação de qualquer usuário logado.
+app.post('/posses', autenticar, async (req, res) => {
+  const { jogo_id, plataforma_id, data_aquisicao } = req.body;
+  if (!jogo_id || !plataforma_id) {
+    return res.status(400).json({ error: 'jogo_id e plataforma_id são obrigatórios.' });
+  }
+  try {
+    const result = await db.query(
+      'INSERT INTO posses (usuario_id, jogo_id, plataforma_id, data_aquisicao) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.usuario.id, jogo_id, plataforma_id, data_aquisicao || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Você já tem esse jogo cadastrado nessa plataforma.' });
+    }
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Jogo ou plataforma inexistente.' });
+    }
+    console.error('Erro ao criar posse:', err);
+    res.status(500).json({ error: 'Erro ao adicionar o jogo à biblioteca.' });
+  }
+});
+
+app.delete('/posses/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM posses WHERE id = $1 AND usuario_id = $2', [id, req.usuario.id]);
+    if (result.rowCount > 0) {
+      return res.status(204).send();
+    }
+    // O delete acima não diferencia "não existe" de "existe mas não é seu" — só
+    // consulta de novo (sem o filtro de dono) pra decidir entre 404 e 403.
+    const existe = await db.query('SELECT id FROM posses WHERE id = $1', [id]);
+    if (existe.rows.length === 0) {
+      return res.status(404).json({ error: 'Posse não encontrada.' });
+    }
+    return res.status(403).json({ error: 'Você só pode remover posses da sua própria biblioteca.' });
+  } catch (err) {
+    console.error('Erro ao deletar posse:', err);
+    res.status(500).json({ error: 'Erro ao remover o jogo da biblioteca.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
