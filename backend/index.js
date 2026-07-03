@@ -610,6 +610,24 @@ app.patch('/importacoes-pendentes/:id', autenticar, async (req, res) => {
   }
 });
 
+// Descarta um pendente sem resolver (a pessoa não quer catalogar aquele item).
+// Não afeta a idempotência da próxima sincronização: se o item ainda não tem
+// posse, uma sincronização futura o recria como pendente de novo — descartar
+// não é "nunca mais importar", é só "tirar da fila por ora".
+app.delete('/importacoes-pendentes/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM importacoes_pendentes WHERE id = $1 AND usuario_id = $2', [id, req.usuario.id]);
+    if (result.rowCount > 0) {
+      return res.status(204).send();
+    }
+    return res.status(404).json({ error: 'Importação pendente não encontrada.' });
+  } catch (err) {
+    console.error('Erro ao descartar importação pendente:', err);
+    res.status(500).json({ error: 'Erro ao descartar a importação.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
