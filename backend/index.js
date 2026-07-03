@@ -230,7 +230,13 @@ app.get('/jogos', async (req, res) => {
     }
 });
 
-app.post('/jogos', autenticar, apenasAdmin, async (req, res) => {
+// Fase 2g: cadastrar jogo novo abre pra qualquer logado (sem apenasAdmin) —
+// quem precisa do jogo cadastrado é quem vai tê-lo na biblioteca, não o admin.
+// Editar/excluir jogo já existente (PUT/DELETE abaixo) continuam apenasAdmin:
+// mexem em dado que outras pessoas já possuem, risco maior que só criar linha nova.
+// Lacuna aceita conscientemente: sem fila de moderação ainda, o cadastro fica
+// visível a todo mundo sem revisão — ok pros 3 usuários conhecidos hoje.
+app.post('/jogos', autenticar, async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
