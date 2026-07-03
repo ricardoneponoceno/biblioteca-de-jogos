@@ -435,6 +435,34 @@ app.get('/biblioteca', autenticar, async (req, res) => {
   }
 });
 
+// --- Importador por plataforma — Fase 4b da #4 ---
+
+// Vincula (ou atualiza) a conta externa do usuário numa plataforma. Upsert:
+// vincular de novo com um id diferente corrige, sem precisar de endpoint de
+// editar separado.
+app.post('/contas-plataforma', autenticar, async (req, res) => {
+  const { plataforma_id, identificador_externo } = req.body;
+  if (!plataforma_id || typeof identificador_externo !== 'string' || !identificador_externo.trim()) {
+    return res.status(400).json({ error: 'plataforma_id e identificador_externo são obrigatórios.' });
+  }
+  try {
+    const result = await db.query(
+      `INSERT INTO contas_plataforma (usuario_id, plataforma_id, identificador_externo)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (usuario_id, plataforma_id) DO UPDATE SET identificador_externo = EXCLUDED.identificador_externo
+       RETURNING *`,
+      [req.usuario.id, plataforma_id, identificador_externo.trim()]
+    );
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Plataforma inexistente.' });
+    }
+    console.error('Erro ao vincular conta de plataforma:', err);
+    res.status(500).json({ error: 'Erro ao vincular a conta.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
