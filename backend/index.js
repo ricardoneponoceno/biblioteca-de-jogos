@@ -463,6 +463,84 @@ app.post('/contas-plataforma', autenticar, async (req, res) => {
   }
 });
 
+const STEAM_API_KEY = process.env.STEAM_API_KEY;
+
+// Fase 4c: importa a biblioteca da Steam pra importacoes_pendentes (staging).
+// Não toca em jogos nem cria posse aqui — só grava o material bruto pra
+// revisão humana depois (Fase 4d/4f). Checagem em duas camadas, escopada por
+// plataforma: já existe posse com esse appid (já resolvido antes, mesmo que o
+// pendente já tenha sido limpo) → pula; senão já existe pendente com esse
+// título (ainda esperando revisão) → pula; senão insere.
+app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
+  if (!STEAM_API_KEY) {
+    return res.status(500).json({ error: 'Importador da Steam não configurado (falta STEAM_API_KEY).' });
+  }
+  try {
+    const contaResult = await db.query(
+      `SELECT ca.identificador_externo, ca.plataforma_id
+       FROM contas_plataforma ca
+       JOIN plataformas p ON p.id = ca.plataforma_id
+       WHERE ca.usuario_id = $1 AND p.nome = 'Steam'`,
+      [req.usuario.id]
+    );
+    const conta = contaResult.rows[0];
+    if (!conta) {
+      return res.status(400).json({ error: 'Vincule sua conta Steam antes de importar.' });
+    }
+
+    const url = `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${STEAM_API_KEY}&steamid=${conta.identificador_externo}&format=json&include_appinfo=1`;
+    const steamRes = await fetch(url);
+    const steamData = await steamRes.json();
+    const jogosSteam = steamData && steamData.response && steamData.response.games;
+    if (!jogosSteam) {
+      return res.status(422).json({ error: 'Não foi possível ler a biblioteca da Steam. Confira se o perfil e os "detalhes do jogo" estão públicos nas configurações de privacidade da Steam.' });
+    }
+
+    let novosPendentes = 0;
+    for (const jogo of jogosSteam) {
+      const appid = String(jogo.appid);
+
+      const jaTemPosse = await db.query(
+        'SELECT 1 FROM posses WHERE usuario_id = $1 AND plataforma_id = $2 AND identificador_externo = $3',
+        [req.usuario.id, conta.plataforma_id, appid]
+      );
+      if (jaTemPosse.rows.length > 0) continue;
+
+      const capa = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
+      const insertResult = await db.query(
+        `INSERT INTO importacoes_pendentes (usuario_id, plataforma_id, identificador_externo, titulo, capa)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (usuario_id, plataforma_id, titulo) DO NOTHING`,
+        [req.usuario.id, conta.plataforma_id, appid, jogo.name, capa]
+      );
+      novosPendentes += insertResult.rowCount;
+    }
+
+    await db.query(
+      'UPDATE contas_plataforma SET ultima_sincronizacao = now() WHERE usuario_id = $1 AND plataforma_id = $2',
+      [req.usuario.id, conta.plataforma_id]
+    );
+
+    res.status(200).json({ total_steam: jogosSteam.length, novos_pendentes: novosPendentes });
+  } catch (err) {
+    console.error('Erro ao importar da Steam:', err);
+    res.status(500).json({ error: 'Erro ao importar da Steam.' });
+  }
+});
+
+app.get('/importacoes-pendentes', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM importacoes_pendentes WHERE usuario_id = $1 AND jogo_id IS NULL ORDER BY titulo ASC',
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar importações pendentes:', err);
+    res.status(500).json({ error: 'Erro ao procurar as importações pendentes.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
