@@ -393,6 +393,38 @@ app.delete('/posses/:id', autenticar, async (req, res) => {
   }
 });
 
+// Consulta central da Fase 2c — sem a parte de amizade/co-posse (Fase 3), só
+// WHERE p.usuario_id = :eu. GET /jogos permanece intacto, servindo de busca
+// do catálogo pro autocomplete de "adicionar à biblioteca" (Fase 2d).
+app.get('/biblioteca', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT
+         p.id AS posse_id,
+         p.data_aquisicao,
+         p.created_at AS posse_created_at,
+         pl.id AS plataforma_id,
+         pl.nome AS plataforma_nome,
+         j.id AS jogo_id,
+         j.titulo,
+         j.lancamento,
+         j.metacritic,
+         j.capa,
+         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
+       FROM posses p
+       JOIN jogos j ON j.id = p.jogo_id
+       JOIN plataformas pl ON pl.id = p.plataforma_id
+       WHERE p.usuario_id = $1
+       ORDER BY j.titulo ASC`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar biblioteca:', err);
+    res.status(500).json({ error: 'Erro ao procurar a biblioteca.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
