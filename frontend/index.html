@@ -606,6 +606,13 @@
       // não mais o catálogo inteiro — cada item já vem com o dado do jogo
       // agregado (GET /biblioteca), mais posse_id/plataforma_nome/plataforma_id.
       const [biblioteca, setBiblioteca] = useState([]);
+      // Fase 2g: modo catálogo (admin) — troca a fonte de dado pra GET /jogos
+      // (o catálogo inteiro, não só minhas posses), com editar/excluir mirando
+      // o jogo canônico. Só entra quem tem is_admin (o toggle nem aparece pra
+      // quem não tem).
+      const [modoCatalogo, setModoCatalogo] = useState(false);
+      const [catalogo, setCatalogo] = useState([]);
+      const [totalCatalogo, setTotalCatalogo] = useState(0);
       const [plataformas, setPlataformas] = useState([]);
       const [allGeneros, setAllGeneros] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -662,6 +669,7 @@
       // exige token, e chamar sem ele derrubaria o interceptor de 401 (que
       // desloga/recarrega em qualquer 401 fora de /login e /registro).
       const fetchBiblioteca = useCallback(async (bg = false) => {
+        if (modoCatalogo) return; // catálogo tem seu próprio fetch, abaixo
         if (!usuarioEmail) { setBiblioteca([]); if (!bg) setLoading(false); return; }
         try {
           if (!BACKEND_URL) return;
@@ -669,11 +677,36 @@
           const res = await axios.get(`${BACKEND_URL}/biblioteca`);
           setBiblioteca(res.data); setError(null);
         } catch (err) { setError("Falha ao carregar biblioteca."); } finally { if (!bg) setLoading(false); }
-      }, [usuarioEmail]);
+      }, [usuarioEmail, modoCatalogo]);
 
       useEffect(() => { fetchBiblioteca(); }, [fetchBiblioteca]);
 
+      // Modo catálogo usa os mesmos filtros, mas server-side (GET /jogos já
+      // suporta) — o catálogo inteiro (328+ jogos) não escala bem filtrando
+      // no cliente como a biblioteca pessoal (2d) faz.
+      const fetchCatalogo = useCallback(async (bg = false) => {
+        if (!modoCatalogo) return;
+        try {
+          if (!BACKEND_URL) return;
+          if (!bg) setLoading(true);
+          const params = new URLSearchParams();
+          for (const key in filters) if (filters[key]) params.append(key, (key.includes('gameplay') ? filters[key]*60 : filters[key]));
+          const res = await axios.get(`${BACKEND_URL}/jogos?${params.toString()}`);
+          setCatalogo(res.data.filteredGames); setTotalCatalogo(res.data.totalGames); setError(null);
+        } catch (err) { setError("Falha ao carregar catálogo."); } finally { if (!bg) setLoading(false); }
+      }, [filters, modoCatalogo]);
+
+      useEffect(() => { const h = setTimeout(() => fetchCatalogo(), 500); return () => clearTimeout(h); }, [filters, fetchCatalogo]);
+
       const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
+
+      // Reseta os filtros ao trocar de modo — o dropdown de plataforma lista
+      // conjuntos diferentes em cada modo (plataformas reais da posse vs. o
+      // texto livre legado de jogos.plataforma), um valor não faz sentido no outro.
+      const toggleModoCatalogo = () => {
+        setModoCatalogo(m => !m);
+        setFilters({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
+      };
 
       const handleSaveGame = async (gameData) => {
         // Erro não é capturado aqui de propósito: propaga pro GameFormModal, que
@@ -702,11 +735,24 @@
         }
       };
 
+      // Exclui o jogo canônico (não uma posse) — posses.jogo_id tem ON DELETE
+      // CASCADE, então isso apaga a posse de QUALQUER pessoa que tenha esse
+      // jogo, não só a de quem está excluindo. O confirm avisa disso de propósito.
+      const handleExcluirJogoCanonico = async (jogo) => {
+        if (window.confirm(`Excluir "${jogo.titulo}" do catálogo? Isso remove esse jogo da biblioteca de qualquer pessoa que o possua, não só a sua.`)) {
+          try { await axios.delete(`${BACKEND_URL}/jogos/${jogo.id}`); fetchCatalogo(true); } catch (err) { alert("Erro ao excluir."); }
+        }
+      };
+
+      const handleDeleteCard = modoCatalogo ? handleExcluirJogoCanonico : handleRemoverPosse;
+
       if (error) return <h1 className="text-red-400 text-2xl text-center mt-10">{error}</h1>;
 
       // GameCard/GameFormModal esperam um campo "id" pro jogo canônico — a
       // biblioteca devolve isso como jogo_id (pra não colidir com posse_id).
-      const cardItems = biblioteca
+      // Modo catálogo já vem pronto de GET /jogos (mesmo shape de antes da 2d,
+      // já tem .id/.plataforma/.generos — filtro é server-side, sem reprocessar aqui).
+      const itemsBiblioteca = biblioteca
         .filter(item => !filters.titulo || item.titulo.toLowerCase().includes(filters.titulo.toLowerCase()))
         .filter(item => !filters.plataforma || item.plataforma_nome === filters.plataforma)
         .filter(item => !filters.genero || (item.generos && item.generos.includes(filters.genero)))
@@ -715,6 +761,9 @@
         .filter(item => !filters.metacritic_min || item.metacritic >= filters.metacritic_min)
         .filter(item => !filters.metacritic_max || item.metacritic <= filters.metacritic_max)
         .map(item => ({ ...item, id: item.jogo_id }));
+
+      const cardItems = modoCatalogo ? catalogo : itemsBiblioteca;
+      const totalItems = modoCatalogo ? totalCatalogo : biblioteca.length;
 
       const plataformasComJogo = Array.from(new Set(biblioteca.map(item => item.plataforma_nome))).sort();
 
@@ -726,9 +775,9 @@
               {usuarioEmail && (
                 <p className="text-gray-400 mt-2">
                   {Object.values(filters).some(v => v !== '') ? (
-                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{biblioteca.length}</span> jogos.</span>
+                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{totalItems}</span> jogos{modoCatalogo ? ' no catálogo' : ''}.</span>
                   ) : (
-                    <span>Atualmente com <span className="font-bold text-cyan-400">{biblioteca.length}</span> jogos na sua biblioteca.</span>
+                    <span>Atualmente com <span className="font-bold text-cyan-400">{totalItems}</span> jogos {modoCatalogo ? 'no catálogo' : 'na sua biblioteca'}.</span>
                   )}
                 </p>
               )}
@@ -742,7 +791,8 @@
               ) : (
                 <button onClick={() => setIsAuthModalOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Entrar</button>
               )}
-              {usuarioEmail && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
+              {isAdmin && <button onClick={toggleModoCatalogo} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">{modoCatalogo ? 'Voltar pra minha biblioteca' : 'Ver catálogo completo'}</button>}
+              {usuarioEmail && !modoCatalogo && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
             </div>
           </header>
 
@@ -758,7 +808,7 @@
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                   <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
                   <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
-                    <option value="">Plataformas</option>{plataformasComJogo.map(p => <option key={p} value={p}>{p}</option>)}
+                    <option value="">Plataformas</option>{(modoCatalogo ? PLATAFORMAS : plataformasComJogo).map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                   <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                     <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
@@ -776,7 +826,7 @@
 
               {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-                  {cardItems.length > 0 ? cardItems.map(item => <GameCard key={item.posse_id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleRemoverPosse} isAdmin={isAdmin} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.'}</p></div>}
+                  {cardItems.length > 0 ? cardItems.map(item => <GameCard key={item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modoCatalogo} />) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{modoCatalogo ? 'Nenhum jogo encontrado no catálogo.' : (biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.')}</p></div>}
                 </div>
               )}
             </React.Fragment>
