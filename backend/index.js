@@ -13,10 +13,10 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET não definido — configure a variável de ambiente antes de iniciar o servidor.');
 }
 const JWT_EXPIRES_IN = '30d';
-// Hash "de mentira" pra comparar quando o email não existe — sem isso, bcrypt.compare()
-// só roda quando o usuário é encontrado, e login com email inexistente responde muito
+// Hash "de mentira" pra comparar quando o username não existe — sem isso, bcrypt.compare()
+// só roda quando o usuário é encontrado, e login com username inexistente responde muito
 // mais rápido que senha errada (mesma mensagem de erro, tempo de resposta diferente:
-// um atacante consegue enumerar emails cadastrados só medindo o tempo).
+// um atacante consegue enumerar usernames cadastrados só medindo o tempo).
 const DUMMY_HASH = bcrypt.hashSync('senha-de-mentira-so-pra-gastar-tempo-de-cpu', 10);
 
 const app = express();
@@ -109,11 +109,11 @@ async function apenasAdmin(req, res, next) {
 }
 
 app.post('/registro', async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
   // typeof antes de qualquer uso: um array (ex: password: ["a","b","c","d","e","f"])
   // tem .length e passaria na checagem de tamanho, quebrando só lá no bcrypt.
-  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-    return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
@@ -121,14 +121,14 @@ app.post('/registro', async (req, res) => {
   try {
     const password_hash = await bcrypt.hash(password, 10);
     const result = await db.query(
-      'INSERT INTO usuarios(email, password_hash) VALUES ($1, $2) RETURNING id, email, is_admin',
-      [email.trim().toLowerCase(), password_hash]
+      'INSERT INTO usuarios(username, password_hash) VALUES ($1, $2) RETURNING id, username, is_admin',
+      [username.trim().toLowerCase(), password_hash]
     );
     const usuario = result.rows[0];
     res.status(201).json({ token: assinarToken(usuario) });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Esse email já está cadastrado.' });
+      return res.status(409).json({ error: 'Esse username já está cadastrado.' });
     }
     console.error('Erro ao registrar usuário:', err);
     res.status(500).json({ error: 'Erro ao registrar usuário.' });
@@ -136,19 +136,19 @@ app.post('/registro', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-    return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+  const { username, password } = req.body;
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
   }
   try {
-    const result = await db.query('SELECT id, email, password_hash, is_admin FROM usuarios WHERE email = $1', [email.trim().toLowerCase()]);
+    const result = await db.query('SELECT id, username, password_hash, is_admin FROM usuarios WHERE username = $1', [username.trim().toLowerCase()]);
     const usuario = result.rows[0];
     // Roda bcrypt.compare() sempre, mesmo sem usuário (contra o DUMMY_HASH) — o tempo de
-    // resposta fica igual nos dois casos, sem vazar quais emails estão cadastrados.
+    // resposta fica igual nos dois casos, sem vazar quais usernames estão cadastrados.
     const senhaValida = await bcrypt.compare(password, usuario ? usuario.password_hash : DUMMY_HASH);
-    // Mensagem genérica de propósito — não indica se o email existe ou se a senha está errada.
+    // Mensagem genérica de propósito — não indica se o username existe ou se a senha está errada.
     if (!usuario || !senhaValida) {
-      return res.status(401).json({ error: 'Email ou senha inválidos.' });
+      return res.status(401).json({ error: 'Username ou senha inválidos.' });
     }
     res.status(200).json({ token: assinarToken(usuario) });
   } catch (err) {

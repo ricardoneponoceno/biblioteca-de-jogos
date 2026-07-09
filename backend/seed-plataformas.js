@@ -14,7 +14,7 @@ const PLATAFORMAS = [
   'Steam', 'Epic', 'GOG', 'Nintendo Switch', 'PlayStation', 'Xbox', 'Mídia física',
 ];
 
-const DEV_USER_EMAIL = 'marcelo@dev.local';
+const DEV_USER_USERNAME = 'marcelo';
 const DEV_USER_SENHA = 'dev123456';
 
 async function seedPlataformas() {
@@ -32,10 +32,10 @@ async function seedPlataformas() {
 async function seedPossesDev() {
   const password_hash = await bcrypt.hash(DEV_USER_SENHA, 10);
   const userResult = await db.query(
-    `INSERT INTO usuarios (email, password_hash) VALUES ($1, $2)
-     ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+    `INSERT INTO usuarios (username, password_hash) VALUES ($1, $2)
+     ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
      RETURNING id`,
-    [DEV_USER_EMAIL, password_hash]
+    [DEV_USER_USERNAME, password_hash]
   );
   const usuarioId = userResult.rows[0].id;
 
@@ -52,7 +52,7 @@ async function seedPossesDev() {
     );
     inserted += res.rowCount;
   }
-  console.log(`Posses de exemplo (${DEV_USER_EMAIL} / ${DEV_USER_SENHA}): ${inserted} inserida(s).`);
+  console.log(`Posses de exemplo (${DEV_USER_USERNAME} / ${DEV_USER_SENHA}): ${inserted} inserida(s).`);
 }
 
 seedPlataformas()
