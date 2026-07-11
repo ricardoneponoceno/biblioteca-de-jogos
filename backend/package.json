@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test --test-concurrency=1",
     "migrate": "node migrate.js",
-    "seed": "node import.js && node seed-generos.js && node seed-plataformas.js"
+    "seed": "node import.js && node seed-generos.js && node seed-plataformas.js && node seed-vinculos.js"
   },
   "keywords": [],
   "author": "",

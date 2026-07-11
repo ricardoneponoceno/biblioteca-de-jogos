@@ -26,6 +26,19 @@ function baseConfig() {
   };
 }
 
+// Aplica as migrations no banco de teste chamando o runner real (migrate.js),
+// só apontando o DB_DATABASE pro banco de teste. O dotenv do db.js não
+// sobrescreve env já setado, então essa troca vence sem tocar no .env.
+// Idempotente (o runner pula o que já aplicou) — dá pra chamar de novo pra
+// testar re-execução.
+function runMigrations() {
+  execFileSync('node', ['migrate.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, DB_DATABASE: TEST_DB },
+    stdio: 'pipe',
+  });
+}
+
 // Recria o banco de teste do zero e aplica todas as migrations nele.
 async function resetTestDatabase() {
   // Conecta no banco de manutenção 'postgres' pra poder dropar/criar o de teste
@@ -43,15 +56,7 @@ async function resetTestDatabase() {
   } finally {
     await admin.end();
   }
-
-  // Aplica as migrations chamando o runner real (migrate.js), só apontando o
-  // DB_DATABASE pro banco de teste. O dotenv do db.js não sobrescreve env já
-  // setado, então essa troca vence sem tocar no .env.
-  execFileSync('node', ['migrate.js'], {
-    cwd: path.join(__dirname, '..'),
-    env: { ...process.env, DB_DATABASE: TEST_DB },
-    stdio: 'pipe',
-  });
+  runMigrations();
 }
 
 // Pool conectado ao banco de teste, pras asserções.
@@ -59,4 +64,4 @@ function testPool() {
   return new Pool({ ...baseConfig(), database: TEST_DB });
 }
 
-module.exports = { resetTestDatabase, testPool, TEST_DB };
+module.exports = { resetTestDatabase, runMigrations, testPool, TEST_DB };
