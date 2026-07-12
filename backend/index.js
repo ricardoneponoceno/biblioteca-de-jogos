@@ -642,6 +642,7 @@ app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
     ]);
 
     res.status(200).json({
+      id: dono.id, // precisa vazar (não é sensível) — é o destinatario_id que POST /vinculos exige
       username: dono.username,
       bio: dono.bio,
       contadores: { jogos: jogos.rows[0].n, amigos: amigos.rows[0].n, familia: familia.rows[0].n },

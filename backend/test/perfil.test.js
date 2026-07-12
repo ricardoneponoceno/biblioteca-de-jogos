@@ -149,6 +149,7 @@ test('perfil sem nenhum vínculo: vinculo_amizade e vinculo_familiar vêm null',
   const dono = await app.criarUsuario('dono8');
   const res = await get(`/usuarios/${dono.username}/perfil`, { token: eu.token });
   const body = await res.json();
+  assert.equal(body.id, dono.id); // POST /vinculos precisa desse id como destinatario_id
   assert.equal(body.vinculo_amizade, null);
   assert.equal(body.vinculo_familiar, null);
 });
