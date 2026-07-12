@@ -444,6 +444,12 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: 'Erro interno do servidor.' });
 });
 
-app.listen(port, () => {
-  console.log(`Servidor executando na porta ${port}`);
-});
+// Guardado atrás de require.main pra o módulo ser importável em teste sem
+// subir um servidor de verdade (o teste sobe o próprio listener, se precisar).
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Servidor executando na porta ${port}`);
+  });
+}
+
+module.exports = app;
