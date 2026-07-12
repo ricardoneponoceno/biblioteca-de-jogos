@@ -435,6 +435,144 @@ app.get('/biblioteca', autenticar, async (req, res) => {
   }
 });
 
+// --- Vínculos entre pessoas (amizade / familiar) — Fase 3b da #3 ---
+// Máquina de estados: alguém pede (pendente), o outro aceita/recusa. Convite
+// reverso pendente (B já pediu pra A, A pede pra B) vira aceite em vez de um
+// segundo registro. Direção só importa no convite — uma vez aceito, o vínculo
+// é simétrico (os dois lados enxergam igual). Desenho completo na wiki
+// ("Perfil do usuário").
+
+const TIPOS_VINCULO = ['amizade', 'familiar'];
+
+app.post('/vinculos', autenticar, async (req, res) => {
+  const { destinatario_id, tipo } = req.body;
+  if (!destinatario_id || !TIPOS_VINCULO.includes(tipo)) {
+    return res.status(400).json({ error: 'destinatario_id e tipo (amizade|familiar) são obrigatórios.' });
+  }
+  if (destinatario_id === req.usuario.id) {
+    return res.status(400).json({ error: 'Não é possível criar um vínculo consigo mesmo.' });
+  }
+  try {
+    // Convite reverso: se a outra pessoa já tem um pedido pendente pra mim
+    // (mesmo tipo), pedir de volta aceita o dela em vez de criar um segundo
+    // registro — evita duas linhas espelhadas representando a mesma relação.
+    const reverso = await db.query(
+      `SELECT * FROM vinculos
+       WHERE solicitante_id = $1 AND destinatario_id = $2 AND tipo = $3 AND status = 'pendente'`,
+      [destinatario_id, req.usuario.id, tipo]
+    );
+    if (reverso.rows.length > 0) {
+      const aceito = await db.query(
+        `UPDATE vinculos SET status = 'aceito', resolved_at = now() WHERE id = $1 RETURNING *`,
+        [reverso.rows[0].id]
+      );
+      return res.status(200).json(aceito.rows[0]);
+    }
+
+    const result = await db.query(
+      `INSERT INTO vinculos (solicitante_id, destinatario_id, tipo) VALUES ($1, $2, $3) RETURNING *`,
+      [req.usuario.id, destinatario_id, tipo]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Já existe um pedido desse tipo entre vocês.' });
+    }
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Usuário destinatário inexistente.' });
+    }
+    if (err.code === '23514') {
+      return res.status(400).json({ error: 'Vínculo inválido.' });
+    }
+    console.error('Erro ao criar vínculo:', err);
+    res.status(500).json({ error: 'Erro ao criar o vínculo.' });
+  }
+});
+
+// Aceitar/recusar (só o destinatário) ou cancelar um pedido próprio (só o
+// solicitante) — cancelar é só "recusar" visto do outro lado; não existe um
+// status separado de "cancelado" (o CHECK da 0007 só permite pendente/
+// aceito/recusado, de propósito, pra não multiplicar estado sem necessidade).
+app.patch('/vinculos/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!['aceito', 'recusado'].includes(status)) {
+    return res.status(400).json({ error: "status deve ser 'aceito' ou 'recusado'." });
+  }
+  try {
+    const existente = await db.query('SELECT * FROM vinculos WHERE id = $1', [id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Vínculo não encontrado.' });
+    }
+    const vinculo = existente.rows[0];
+    if (vinculo.status !== 'pendente') {
+      return res.status(409).json({ error: 'Este vínculo já foi resolvido.' });
+    }
+
+    const souDestinatario = vinculo.destinatario_id === req.usuario.id;
+    const souSolicitante = vinculo.solicitante_id === req.usuario.id;
+    if (status === 'aceito' && !souDestinatario) {
+      return res.status(403).json({ error: 'Só o destinatário pode aceitar o pedido.' });
+    }
+    if (status === 'recusado' && !souDestinatario && !souSolicitante) {
+      return res.status(403).json({ error: 'Você não faz parte deste vínculo.' });
+    }
+
+    const result = await db.query(
+      `UPDATE vinculos SET status = $1, resolved_at = now() WHERE id = $2 RETURNING *`,
+      [status, id]
+    );
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao atualizar vínculo:', err);
+    res.status(500).json({ error: 'Erro ao atualizar o vínculo.' });
+  }
+});
+
+// Desfazer um vínculo já aceito (qualquer um dos dois lados) — "desamizar" ou
+// desfazer o vínculo familiar. Um pedido ainda pendente se cancela via PATCH,
+// não aqui (ver comentário acima).
+app.delete('/vinculos/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const existente = await db.query('SELECT * FROM vinculos WHERE id = $1', [id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Vínculo não encontrado.' });
+    }
+    const vinculo = existente.rows[0];
+    if (vinculo.solicitante_id !== req.usuario.id && vinculo.destinatario_id !== req.usuario.id) {
+      return res.status(403).json({ error: 'Você não faz parte deste vínculo.' });
+    }
+    if (vinculo.status !== 'aceito') {
+      return res
+        .status(400)
+        .json({ error: 'Só é possível desfazer um vínculo aceito — peça pra cancelar/recusar via PATCH.' });
+    }
+    await db.query('DELETE FROM vinculos WHERE id = $1', [id]);
+    res.status(204).send();
+  } catch (err) {
+    console.error('Erro ao desfazer vínculo:', err);
+    res.status(500).json({ error: 'Erro ao desfazer o vínculo.' });
+  }
+});
+
+app.get('/vinculos/pendentes', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT v.*, u.username AS solicitante_username
+       FROM vinculos v
+       JOIN usuarios u ON u.id = v.solicitante_id
+       WHERE v.destinatario_id = $1 AND v.status = 'pendente'
+       ORDER BY v.created_at ASC`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao buscar vínculos pendentes:', err);
+    res.status(500).json({ error: 'Erro ao buscar solicitações pendentes.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
