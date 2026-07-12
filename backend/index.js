@@ -469,6 +469,28 @@ app.post('/vinculos', autenticar, async (req, res) => {
       return res.status(200).json(aceito.rows[0]);
     }
 
+    // Já existe um registro nessa direção exata? A UNIQUE (solicitante,
+    // destinatario, tipo) não distingue por status — sem esta checagem, um
+    // pedido recusado uma vez ficaria bloqueado (23505) pra sempre nessa
+    // direção, mesmo a pessoa querendo tentar de novo.
+    const existente = await db.query(
+      `SELECT * FROM vinculos WHERE solicitante_id = $1 AND destinatario_id = $2 AND tipo = $3`,
+      [req.usuario.id, destinatario_id, tipo]
+    );
+    if (existente.rows.length > 0) {
+      const atual = existente.rows[0];
+      if (atual.status !== 'recusado') {
+        return res.status(409).json({ error: 'Já existe um pedido desse tipo entre vocês.' });
+      }
+      // Recusado antes: pedir de novo reabre o mesmo registro em vez de criar
+      // um segundo (a UNIQUE não permitiria de qualquer forma).
+      const reaberto = await db.query(
+        `UPDATE vinculos SET status = 'pendente', created_at = now(), resolved_at = NULL WHERE id = $1 RETURNING *`,
+        [atual.id]
+      );
+      return res.status(201).json(reaberto.rows[0]);
+    }
+
     const result = await db.query(
       `INSERT INTO vinculos (solicitante_id, destinatario_id, tipo) VALUES ($1, $2, $3) RETURNING *`,
       [req.usuario.id, destinatario_id, tipo]
@@ -590,7 +612,20 @@ app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
     }
     const dono = usuarioResult.rows[0];
 
-    const [jogos, amigos, familia] = await Promise.all([
+    // Relação entre QUEM ESTÁ VENDO (req.usuario.id) e o dono do perfil — é o
+    // que o frontend precisa pra desenhar o botão de ação ("Adicionar amigo"
+    // vs. "Solicitação enviada" vs. "Aceitar", conforme quem foi o
+    // solicitante). Addendum achado ao desenhar a 3c: sem isso o perfil não
+    // dava pra saber o estado do vínculo com quem está olhando.
+    const VINCULO_COM_VISITANTE_SQL = `
+      SELECT id, status, solicitante_id, destinatario_id FROM vinculos
+      WHERE tipo = $3
+        AND ((solicitante_id = $1 AND destinatario_id = $2) OR (solicitante_id = $2 AND destinatario_id = $1))
+      ORDER BY (status <> 'recusado') DESC, created_at DESC
+      LIMIT 1
+    `;
+
+    const [jogos, amigos, familia, vinculoAmizade, vinculoFamiliar] = await Promise.all([
       db.query('SELECT count(*)::int AS n FROM posses WHERE usuario_id = $1', [dono.id]),
       db.query(
         `SELECT count(*)::int AS n FROM vinculos
@@ -602,12 +637,16 @@ app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
          WHERE tipo = 'familiar' AND status = 'aceito' AND (solicitante_id = $1 OR destinatario_id = $1)`,
         [dono.id]
       ),
+      db.query(VINCULO_COM_VISITANTE_SQL, [req.usuario.id, dono.id, 'amizade']),
+      db.query(VINCULO_COM_VISITANTE_SQL, [req.usuario.id, dono.id, 'familiar']),
     ]);
 
     res.status(200).json({
       username: dono.username,
       bio: dono.bio,
       contadores: { jogos: jogos.rows[0].n, amigos: amigos.rows[0].n, familia: familia.rows[0].n },
+      vinculo_amizade: vinculoAmizade.rows[0] || null,
+      vinculo_familiar: vinculoFamiliar.rows[0] || null,
     });
   } catch (err) {
     console.error('Erro ao buscar perfil:', err);

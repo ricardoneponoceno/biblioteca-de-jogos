@@ -18,6 +18,7 @@ after(async () => {
 });
 
 const get = (path, opts) => authedFetch(app.baseUrl, path, { method: 'GET', ...opts });
+const post = (path, opts) => authedFetch(app.baseUrl, path, { method: 'POST', ...opts });
 
 test('GET /usuarios/:username/perfil sem token -> 401', async () => {
   const res = await get('/usuarios/ninguem/perfil');
@@ -137,4 +138,50 @@ test('?em_comum=true com amizade cruza certo por (jogo, plataforma), considerand
   const lista = await res.json();
   const titulos = lista.map((j) => j.titulo).sort();
   assert.deepEqual(titulos, ['Jogo Em Comum 7']);
+});
+
+// Addendum (achado ao desenhar o botão de ação da 3c): o perfil precisa dizer
+// pra quem está vendo qual é a relação entre os dois — senão o frontend não
+// sabe se mostra "Adicionar amigo", "Solicitação enviada" ou "Aceitar".
+
+test('perfil sem nenhum vínculo: vinculo_amizade e vinculo_familiar vêm null', async () => {
+  const eu = await app.criarUsuario('eu8');
+  const dono = await app.criarUsuario('dono8');
+  const res = await get(`/usuarios/${dono.username}/perfil`, { token: eu.token });
+  const body = await res.json();
+  assert.equal(body.vinculo_amizade, null);
+  assert.equal(body.vinculo_familiar, null);
+});
+
+test('perfil reflete pedido pendente que EU enviei (solicitante sou eu)', async () => {
+  const eu = await app.criarUsuario('eu9');
+  const dono = await app.criarUsuario('dono9');
+  await post('/vinculos', { token: eu.token, body: { destinatario_id: dono.id, tipo: 'amizade' } });
+
+  const res = await get(`/usuarios/${dono.username}/perfil`, { token: eu.token });
+  const body = await res.json();
+  assert.equal(body.vinculo_amizade.status, 'pendente');
+  assert.equal(body.vinculo_amizade.solicitante_id, eu.id);
+});
+
+test('perfil reflete pedido pendente que o DONO enviou pra mim', async () => {
+  const eu = await app.criarUsuario('eu10');
+  const dono = await app.criarUsuario('dono10');
+  await post('/vinculos', { token: dono.token, body: { destinatario_id: eu.id, tipo: 'amizade' } });
+
+  const res = await get(`/usuarios/${dono.username}/perfil`, { token: eu.token });
+  const body = await res.json();
+  assert.equal(body.vinculo_amizade.status, 'pendente');
+  assert.equal(body.vinculo_amizade.solicitante_id, dono.id);
+});
+
+test('perfil reflete amizade aceita e vínculo familiar aceito, independentes', async () => {
+  const eu = await app.criarUsuario('eu11');
+  const dono = await app.criarUsuario('dono11');
+  await app.criarVinculoAceito(eu.id, dono.id, 'amizade');
+
+  const res = await get(`/usuarios/${dono.username}/perfil`, { token: eu.token });
+  const body = await res.json();
+  assert.equal(body.vinculo_amizade.status, 'aceito');
+  assert.equal(body.vinculo_familiar, null);
 });

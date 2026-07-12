@@ -55,6 +55,25 @@ test('POST /vinculos duplicado (mesmo par + tipo, ainda pendente) -> 409', async
   assert.equal(segundo.status, 409);
 });
 
+test('POST /vinculos depois de recusado reabre o mesmo pedido (não fica 409 pra sempre)', async () => {
+  const a = await app.criarUsuario('a3b');
+  const b = await app.criarUsuario('b3b');
+  const criado = await (await post('/vinculos', { token: a.token, body: { destinatario_id: b.id, tipo: 'amizade' } })).json();
+  await patch(`/vinculos/${criado.id}`, { token: b.token, body: { status: 'recusado' } });
+
+  const retry = await post('/vinculos', { token: a.token, body: { destinatario_id: b.id, tipo: 'amizade' } });
+  assert.equal(retry.status, 201);
+  const body = await retry.json();
+  assert.equal(body.id, criado.id); // reabre o mesmo registro, não cria um novo
+  assert.equal(body.status, 'pendente');
+
+  const r = await app.pool.query(
+    'SELECT count(*)::int AS n FROM vinculos WHERE solicitante_id = $1 AND destinatario_id = $2',
+    [a.id, b.id]
+  );
+  assert.equal(r.rows[0].n, 1);
+});
+
 test('convite reverso pendente vira aceite, não cria 2º registro', async () => {
   const a = await app.criarUsuario('a4');
   const b = await app.criarUsuario('b4');
