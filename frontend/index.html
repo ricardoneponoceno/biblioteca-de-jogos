@@ -26,7 +26,10 @@
   <!-- Usamos o Babel 6, que NÃO cracha com scripts nativos -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-  <script src="config.js"></script>
+  <!-- Absoluto, não relativo: sob /u/:username (Fase 3c da #3) um caminho
+       relativo resolveria pra /u/config.js, que não existe — cai no fallback
+       do nginx (index.html, HTML em vez de JS) e quebra o parse. -->
+  <script src="/config.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
@@ -111,7 +114,10 @@
       }
     );
 
-    function GameCard({ jogo, onEdit, onDelete, isAdmin }) {
+    // readonly esconde editar/excluir por completo — usado no perfil de outra
+    // pessoa (Fase 3c da #3), onde a lista nem tem posse_id/jogo canônico
+    // editável associado (a API do perfil não devolve isso de propósito).
+    function GameCard({ jogo, onEdit, onDelete, isAdmin, readonly }) {
       const formatarGameplay = (minutos) => {
         if (!minutos) return 'N/A';
         const horas = Math.floor(minutos / 60);
@@ -127,10 +133,12 @@
             {/* Remover é sobre a própria posse (não exige is_admin — é o que
                 permite qualquer dono tirar um jogo da própria biblioteca);
                 editar é sobre o jogo canônico e continua restrito ao admin. */}
-            <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
-                {isAdmin && <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>}
-                <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg></button>
-            </div>
+            {!readonly && (
+              <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
+                  {isAdmin && <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>}
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg></button>
+              </div>
+            )}
           </div>
           <div className="p-2 sm:p-4 flex flex-col flex-grow">
             <h2 className="text-sm sm:text-lg font-bold text-white leading-tight mb-1 line-clamp-2" title={jogo.titulo}>{jogo.titulo}</h2>
@@ -601,7 +609,9 @@
       );
     }
 
-    function App() {
+    // Era App() até a Fase 3c da #3 — renomeado quando App virou o roteador
+    // (index vs. /u/:username), pra não confundir os dois papéis.
+    function IndexPage() {
       // Fase 2d: a index passa a mostrar a biblioteca pessoal (minhas posses),
       // não mais o catálogo inteiro — cada item já vem com o dado do jogo
       // agregado (GET /biblioteca), mais posse_id/plataforma_nome/plataforma_id.
@@ -785,7 +795,10 @@
             <div className="flex items-center gap-3">
               {usuarioUsername ? (
                 <React.Fragment>
-                  <span className="text-sm text-gray-400 hidden sm:inline">{usuarioUsername}</span>
+                  {/* Navegação real de página (não SPA) — mesma decisão do roteador
+                      do App: sem build step, um <a> normal é mais simples que
+                      montar pushState/popstate só pra isso. */}
+                  <a href={`/u/${encodeURIComponent(usuarioUsername)}`} className="text-sm text-blue-400 hover:text-blue-300 underline hidden sm:inline">{usuarioUsername}</a>
                   <button onClick={handleLogout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Sair</button>
                 </React.Fragment>
               ) : (
@@ -845,6 +858,283 @@
           )}
         </div>
       );
+    }
+
+    // Cor determinística a partir do username — placeholder de avatar (Fase 3c
+    // da #3; upload de imagem real fica pra quando existir storage de arquivo,
+    // ver "Em aberto" na wiki).
+    function corAvatar(username) {
+      let hash = 0;
+      for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+      return `hsl(${Math.abs(hash) % 360}, 55%, 40%)`;
+    }
+
+    // Botão de ação de vínculo (amizade ou familiar) no cabeçalho do perfil —
+    // os 4 estados descritos na wiki ("Estados do botão"): nenhum vínculo,
+    // pendente (eu pedi / me pediram), aceito. Reusado pros dois tipos.
+    function VinculoButton({ tipo, rotulo, vinculo, meuId, donoId, onChange }) {
+      const [enviando, setEnviando] = useState(false);
+      const [erro, setErro] = useState('');
+
+      const chamar = async (fn) => {
+        setErro(''); setEnviando(true);
+        try { await fn(); await onChange(); } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao processar.');
+        } finally { setEnviando(false); }
+      };
+
+      const pedir = () => chamar(() => axios.post(`${BACKEND_URL}/vinculos`, { destinatario_id: donoId, tipo }));
+      const aceitar = () => chamar(() => axios.patch(`${BACKEND_URL}/vinculos/${vinculo.id}`, { status: 'aceito' }));
+      const recusarOuCancelar = () => chamar(() => axios.patch(`${BACKEND_URL}/vinculos/${vinculo.id}`, { status: 'recusado' }));
+      const desfazer = () => chamar(() => axios.delete(`${BACKEND_URL}/vinculos/${vinculo.id}`));
+
+      const btnClasse = "px-4 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+      let conteudo;
+      if (!vinculo || vinculo.status === 'recusado') {
+        conteudo = <button disabled={enviando} onClick={pedir} className={`${btnClasse} bg-blue-600 hover:bg-blue-700 text-white`}>Adicionar {rotulo}</button>;
+      } else if (vinculo.status === 'pendente' && vinculo.solicitante_id === meuId) {
+        conteudo = (
+          <div className="flex items-center gap-2">
+            <span className={`${btnClasse} bg-gray-700 text-gray-300 cursor-default`}>Solicitação enviada</span>
+            <button disabled={enviando} onClick={recusarOuCancelar} className="text-xs text-gray-400 hover:text-gray-300 underline">Cancelar</button>
+          </div>
+        );
+      } else if (vinculo.status === 'pendente') {
+        conteudo = (
+          <div className="flex items-center gap-2">
+            <button disabled={enviando} onClick={aceitar} className={`${btnClasse} bg-green-600 hover:bg-green-700 text-white`}>Aceitar solicitação</button>
+            <button disabled={enviando} onClick={recusarOuCancelar} className={`${btnClasse} bg-gray-700 hover:bg-gray-600 text-gray-300`}>Recusar</button>
+          </div>
+        );
+      } else {
+        conteudo = (
+          <div className="flex items-center gap-2">
+            <span className={`${btnClasse} bg-gray-700 text-gray-300 cursor-default`}>{rotulo === 'amigo' ? 'Amigos ✓' : 'Família ✓'}</span>
+            <button disabled={enviando} onClick={desfazer} className="text-xs text-gray-400 hover:text-gray-300 underline">Desfazer</button>
+          </div>
+        );
+      }
+
+      return <div>{conteudo}{erro && <div className="text-xs text-red-400 mt-1">{erro}</div>}</div>;
+    }
+
+    // Seção "Solicitações pendentes" — só aparece no próprio perfil (Fase 3c).
+    // Sem tabela de notificação própria (decisão registrada na wiki): a fonte
+    // é direto GET /vinculos/pendentes.
+    function SolicitacoesPendentes({ onResolved }) {
+      const [pendentes, setPendentes] = useState([]);
+      const [loaded, setLoaded] = useState(false);
+      const [processando, setProcessando] = useState(null);
+
+      const carregar = useCallback(async () => {
+        try {
+          const res = await axios.get(`${BACKEND_URL}/vinculos/pendentes`);
+          setPendentes(res.data);
+        } catch (err) {
+          // silencioso — a seção só some se der erro, não é crítico pra tela
+        } finally {
+          setLoaded(true);
+        }
+      }, []);
+
+      useEffect(() => { carregar(); }, [carregar]);
+
+      const resolver = async (id, status) => {
+        setProcessando(id);
+        try {
+          await axios.patch(`${BACKEND_URL}/vinculos/${id}`, { status });
+          await carregar();
+          if (onResolved) onResolved();
+        } catch (err) {
+          // idem — a pessoa vê o card continuar ali e pode tentar de novo
+        } finally {
+          setProcessando(null);
+        }
+      };
+
+      if (!loaded || pendentes.length === 0) return null;
+
+      return (
+        <div className="mb-8 space-y-3">
+          <h2 className="text-lg font-bold text-white">Solicitações pendentes</h2>
+          {pendentes.map((p) => (
+            <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-gray-200 text-sm">
+                <span className="font-semibold">{p.solicitante_username}</span>{' '}
+                {p.tipo === 'amizade' ? 'quer ser seu amigo.' : 'quer criar um vínculo familiar com você.'}
+              </p>
+              <div className="flex gap-2 flex-shrink-0">
+                <button disabled={processando === p.id} onClick={() => resolver(p.id, 'aceito')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-semibold text-white">Aceitar</button>
+                <button disabled={processando === p.id} onClick={() => resolver(p.id, 'recusado')} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm text-gray-300">Recusar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Página de perfil (`/u/:username`) — Fase 3c da #3. Abre na lista pessoal
+    // completa (não na comparação); "em comum" é um filtro, desligado por
+    // padrão. Origem do jogo nunca aparece aqui — a API do perfil já devolve
+    // só jogo+plataforma, sem posse_id/usuario_id (ver GET /usuarios/:username/
+    // biblioteca na wiki), então nem tem como vazar por acidente.
+    function PerfilPage({ username, meuUsername }) {
+      const [perfil, setPerfil] = useState(null);
+      const [biblioteca, setBiblioteca] = useState([]);
+      const [allGeneros, setAllGeneros] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [emComum, setEmComum] = useState(false);
+      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
+
+      const meuId = React.useMemo(() => {
+        const payload = decodeJwt(localStorage.getItem('gameLibToken'));
+        return payload ? payload.usuario_id : null;
+      }, []);
+      const ehMeuProprioPerfil = !!meuUsername && meuUsername === username;
+
+      const carregarPerfil = useCallback(async () => {
+        try {
+          const res = await axios.get(`${BACKEND_URL}/usuarios/${encodeURIComponent(username)}/perfil`);
+          setPerfil(res.data);
+          setError(null);
+        } catch (err) {
+          setError((err.response && err.response.status === 404) ? 'Usuário não encontrado.' : 'Erro ao carregar o perfil.');
+        }
+      }, [username]);
+
+      const carregarBiblioteca = useCallback(async () => {
+        try {
+          const qs = emComum ? '?em_comum=true' : '';
+          const res = await axios.get(`${BACKEND_URL}/usuarios/${encodeURIComponent(username)}/biblioteca${qs}`);
+          setBiblioteca(res.data);
+        } catch (err) {
+          // 403 mais provável (em_comum sem amizade) — volta pro estado
+          // desligado em vez de deixar a tela travada num erro.
+          if (emComum) setEmComum(false);
+        }
+      }, [username, emComum]);
+
+      useEffect(() => {
+        setLoading(true);
+        Promise.all([carregarPerfil(), carregarBiblioteca()]).finally(() => setLoading(false));
+      }, [carregarPerfil, carregarBiblioteca]);
+
+      useEffect(() => {
+        axios.get(`${BACKEND_URL}/generos`).then((res) => setAllGeneros(res.data)).catch(() => {});
+      }, []);
+
+      const handleFilterChange = (e) => setFilters((p) => ({ ...p, [e.target.name]: e.target.value }));
+
+      const plataformasComJogo = Array.from(new Set(biblioteca.map((j) => j.plataforma_nome))).sort();
+
+      // Mesmo shape que a index espera do GameCard: precisa de "id" (usa
+      // jogo_id, já que não há posse_id aqui — não revelar origem é o ponto).
+      const itens = biblioteca
+        .filter((j) => !filters.titulo || j.titulo.toLowerCase().includes(filters.titulo.toLowerCase()))
+        .filter((j) => !filters.plataforma || j.plataforma_nome === filters.plataforma)
+        .filter((j) => !filters.genero || (j.generos && j.generos.includes(filters.genero)))
+        .filter((j) => !filters.gameplay_min || j.gameplay_minutos >= filters.gameplay_min * 60)
+        .filter((j) => !filters.gameplay_max || j.gameplay_minutos <= filters.gameplay_max * 60)
+        .filter((j) => !filters.metacritic_min || j.metacritic >= filters.metacritic_min)
+        .filter((j) => !filters.metacritic_max || j.metacritic <= filters.metacritic_max)
+        .map((j) => ({ ...j, id: j.jogo_id }));
+
+      if (error) {
+        return (
+          <div className="container mx-auto p-4 sm:p-6 lg:p-8 text-center">
+            <p className="text-red-400 text-xl mt-10">{error}</p>
+            <a href="/" className="text-blue-400 hover:text-blue-300 underline mt-4 inline-block">← Voltar pra minha biblioteca</a>
+          </div>
+        );
+      }
+
+      if (loading || !perfil) {
+        return <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div>;
+      }
+
+      return (
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
+          <a href="/" className="text-sm text-blue-400 hover:text-blue-300 underline">← Minha biblioteca</a>
+
+          {/* Cabeçalho estilo Instagram: avatar à esquerda, identidade + ações à direita. */}
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 my-8">
+            <div
+              className="w-24 h-24 sm:w-32 sm:h-32 rounded-full flex items-center justify-center text-white text-4xl font-bold flex-shrink-0 border-4 border-gray-700"
+              style={{ backgroundColor: corAvatar(perfil.username) }}
+            >
+              {perfil.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="text-center sm:text-left flex-grow">
+              <h1 className="text-3xl font-bold text-white">{perfil.username}</h1>
+              {perfil.bio && <p className="text-gray-400 mt-1">{perfil.bio}</p>}
+              <div className="flex gap-4 justify-center sm:justify-start mt-3">
+                <span className="text-gray-300 text-sm"><span className="font-bold text-white">{perfil.contadores.jogos}</span> jogos</span>
+                <span className="text-gray-300 text-sm"><span className="font-bold text-white">{perfil.contadores.amigos}</span> amigos</span>
+                <span className="text-gray-300 text-sm"><span className="font-bold text-white">{perfil.contadores.familia}</span> família</span>
+              </div>
+              {!ehMeuProprioPerfil && (
+                <div className="mt-4 flex flex-col sm:flex-row gap-3 items-center sm:items-start">
+                  <VinculoButton tipo="amizade" rotulo="amigo" vinculo={perfil.vinculo_amizade} meuId={meuId} donoId={perfil.id} onChange={carregarPerfil} />
+                  <VinculoButton tipo="familiar" rotulo="vínculo familiar" vinculo={perfil.vinculo_familiar} meuId={meuId} donoId={perfil.id} onChange={carregarPerfil} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {ehMeuProprioPerfil && <SolicitacoesPendentes onResolved={carregarPerfil} />}
+
+          <div className="bg-gray-800 p-4 rounded-lg mb-8 border border-gray-700">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-center">
+              <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+              <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                <option value="">Plataformas</option>{plataformasComJogo.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                <option value="">Gêneros</option>{allGeneros.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+              </div>
+              <div className="flex gap-2">
+                <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
+                <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
+              </div>
+              {/* "Em comum" — filtro, não seção separada (decisão registrada na
+                  wiki). Desligado por padrão; se a chamada falhar (403, não são
+                  amigos), volta sozinho e o checkbox destrava de novo. */}
+              {!ehMeuProprioPerfil && (
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={emComum} onChange={(e) => setEmComum(e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-blue-500" />
+                  Só jogos em comum
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
+            {itens.length > 0
+              ? itens.map((item) => <GameCard key={item.id} jogo={item} readonly={true} />)
+              : <div className="col-span-full text-center text-gray-500 mt-10">Nenhum jogo encontrado.</div>}
+          </div>
+        </div>
+      );
+    }
+
+    // Roteador mínimo — a primeira rota real do app (Fase 3c da #3). Sem
+    // history.pushState/popstate de propósito: navegação normal por <a href>
+    // (page reload) já resolve, o nginx já faz fallback pra index.html em
+    // qualquer rota, e não vale a complexidade de um router SPA pra uma
+    // segunda tela só. Lê a URL uma vez, no mount.
+    function App() {
+      const path = window.location.pathname;
+      const match = path.match(/^\/u\/([^\/]+)\/?$/);
+      if (match) {
+        const meuUsername = localStorage.getItem('gameLibUsername');
+        return <PerfilPage username={decodeURIComponent(match[1])} meuUsername={meuUsername} />;
+      }
+      return <IndexPage />;
     }
 
     const container = document.getElementById('root');
