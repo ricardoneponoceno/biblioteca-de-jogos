@@ -573,6 +573,130 @@ app.get('/vinculos/pendentes', autenticar, async (req, res) => {
   }
 });
 
+// --- Perfil do usuário — Fase 3b-ii da #3 ---
+// GET /usuarios/:username/perfil: cabeçalho (username, bio, contadores).
+// GET /usuarios/:username/biblioteca: biblioteca EFETIVA da pessoa (posses
+// próprias + as que entram por vínculo familiar aceito), sem revelar de qual
+// conta cada jogo veio — só a plataforma (ver "Testes" na wiki: não-vazamento
+// de origem é o ponto que mais importa aqui). ?em_comum=true recorta pra
+// interseção com a minha biblioteca efetiva, exigindo amizade aceita.
+
+app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
+  const { username } = req.params;
+  try {
+    const usuarioResult = await db.query('SELECT id, username, bio FROM usuarios WHERE username = $1', [username]);
+    if (usuarioResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    const dono = usuarioResult.rows[0];
+
+    const [jogos, amigos, familia] = await Promise.all([
+      db.query('SELECT count(*)::int AS n FROM posses WHERE usuario_id = $1', [dono.id]),
+      db.query(
+        `SELECT count(*)::int AS n FROM vinculos
+         WHERE tipo = 'amizade' AND status = 'aceito' AND (solicitante_id = $1 OR destinatario_id = $1)`,
+        [dono.id]
+      ),
+      db.query(
+        `SELECT count(*)::int AS n FROM vinculos
+         WHERE tipo = 'familiar' AND status = 'aceito' AND (solicitante_id = $1 OR destinatario_id = $1)`,
+        [dono.id]
+      ),
+    ]);
+
+    res.status(200).json({
+      username: dono.username,
+      bio: dono.bio,
+      contadores: { jogos: jogos.rows[0].n, amigos: amigos.rows[0].n, familia: familia.rows[0].n },
+    });
+  } catch (err) {
+    console.error('Erro ao buscar perfil:', err);
+    res.status(500).json({ error: 'Erro ao buscar o perfil.' });
+  }
+});
+
+// "Membros" cuja posse conta pra biblioteca efetiva do usuário no parâmetro
+// $N: a própria pessoa, mais quem tem vínculo familiar aceito com ela
+// (simétrico — não importa quem foi o solicitante do convite). Parametrizado
+// por índice porque a consulta de ?em_comum precisa da mesma lógica duas
+// vezes (dono do perfil e quem está pedindo), com placeholders diferentes.
+const membrosEfetivaSql = (paramIndex) => `
+  SELECT $${paramIndex}::int AS usuario_id
+  UNION
+  SELECT CASE WHEN v.solicitante_id = $${paramIndex} THEN v.destinatario_id ELSE v.solicitante_id END
+  FROM vinculos v
+  WHERE v.tipo = 'familiar' AND v.status = 'aceito' AND $${paramIndex} IN (v.solicitante_id, v.destinatario_id)
+`;
+
+// Colunas selecionadas de propósito: só jogo + plataforma, nunca usuario_id
+// nem posse_id — é o que garante que a origem (própria vs. familiar) não
+// vaza pra quem está vendo o perfil de outra pessoa.
+const COLUNAS_JOGO_SQL = `
+  j.id AS jogo_id, j.titulo, j.lancamento, j.gameplay_minutos, j.metacritic, j.capa,
+  pl.id AS plataforma_id, pl.nome AS plataforma_nome,
+  (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
+`;
+
+app.get('/usuarios/:username/biblioteca', autenticar, async (req, res) => {
+  const { username } = req.params;
+  const emComum = req.query.em_comum === 'true';
+  try {
+    const usuarioResult = await db.query('SELECT id FROM usuarios WHERE username = $1', [username]);
+    if (usuarioResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    const donoId = usuarioResult.rows[0].id;
+
+    if (emComum) {
+      const amizade = await db.query(
+        `SELECT 1 FROM vinculos
+         WHERE tipo = 'amizade' AND status = 'aceito'
+           AND ((solicitante_id = $1 AND destinatario_id = $2) OR (solicitante_id = $2 AND destinatario_id = $1))`,
+        [req.usuario.id, donoId]
+      );
+      if (amizade.rows.length === 0) {
+        return res.status(403).json({ error: 'É preciso ser amigo pra ver os jogos em comum.' });
+      }
+
+      const result = await db.query(
+        `WITH membros_dono AS (${membrosEfetivaSql(1)}),
+              membros_eu AS (${membrosEfetivaSql(2)}),
+              biblioteca_dono AS (
+                SELECT DISTINCT p.jogo_id, p.plataforma_id FROM posses p
+                JOIN membros_dono m ON m.usuario_id = p.usuario_id
+              ),
+              biblioteca_eu AS (
+                SELECT DISTINCT p.jogo_id, p.plataforma_id FROM posses p
+                JOIN membros_eu m ON m.usuario_id = p.usuario_id
+              )
+         SELECT ${COLUNAS_JOGO_SQL}
+         FROM biblioteca_dono bd
+         JOIN biblioteca_eu be ON be.jogo_id = bd.jogo_id AND be.plataforma_id = bd.plataforma_id
+         JOIN jogos j ON j.id = bd.jogo_id
+         JOIN plataformas pl ON pl.id = bd.plataforma_id
+         ORDER BY j.titulo ASC`,
+        [donoId, req.usuario.id]
+      );
+      return res.status(200).json(result.rows);
+    }
+
+    const result = await db.query(
+      `WITH membros AS (${membrosEfetivaSql(1)})
+       SELECT DISTINCT ${COLUNAS_JOGO_SQL}
+       FROM posses p
+       JOIN membros m ON m.usuario_id = p.usuario_id
+       JOIN jogos j ON j.id = p.jogo_id
+       JOIN plataformas pl ON pl.id = p.plataforma_id
+       ORDER BY j.titulo ASC`,
+      [donoId]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao buscar biblioteca do perfil:', err);
+    res.status(500).json({ error: 'Erro ao buscar a biblioteca.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,

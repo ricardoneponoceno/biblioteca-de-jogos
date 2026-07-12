@@ -43,6 +43,39 @@ async function startTestApp() {
       });
       return { id, username, token };
     },
+    // Fixtures pra 3b-ii (perfil/biblioteca) — `jogos.plataforma` é a coluna
+    // legada NOT NULL (Fase 2f ainda não rodou), sem relação com a
+    // `plataforma_id` real da posse; qualquer texto serve aqui.
+    async criarJogo(titulo) {
+      const r = await pool.query(
+        "INSERT INTO jogos (titulo, plataforma) VALUES ($1, 'legado') RETURNING id",
+        [titulo]
+      );
+      return r.rows[0].id;
+    },
+    async criarPlataforma(nome) {
+      const r = await pool.query(
+        'INSERT INTO plataformas (nome) VALUES ($1) ON CONFLICT (nome) DO UPDATE SET nome = EXCLUDED.nome RETURNING id',
+        [nome]
+      );
+      return r.rows[0].id;
+    },
+    async criarPosse(usuarioId, jogoId, plataformaId) {
+      await pool.query(
+        'INSERT INTO posses (usuario_id, jogo_id, plataforma_id) VALUES ($1, $2, $3)',
+        [usuarioId, jogoId, plataformaId]
+      );
+    },
+    // Vínculo já aceito, direto no banco — os testes de máquina de estados
+    // (3b-i) já cobrem o ciclo pedir/aceitar via endpoint; aqui só precisamos
+    // do estado final.
+    async criarVinculoAceito(aId, bId, tipo) {
+      await pool.query(
+        `INSERT INTO vinculos (solicitante_id, destinatario_id, tipo, status, resolved_at)
+         VALUES ($1, $2, $3, 'aceito', now())`,
+        [aId, bId, tipo]
+      );
+    },
   };
 }
 
