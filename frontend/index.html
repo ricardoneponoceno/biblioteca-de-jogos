@@ -793,19 +793,15 @@
               )}
             </div>
             <div className="flex items-center gap-3">
-              {usuarioUsername ? (
-                <React.Fragment>
-                  {/* Navegação real de página (não SPA) — mesma decisão do roteador
-                      do App: sem build step, um <a> normal é mais simples que
-                      montar pushState/popstate só pra isso. */}
-                  <a href={`/u/${encodeURIComponent(usuarioUsername)}`} className="text-sm text-blue-400 hover:text-blue-300 underline hidden sm:inline">{usuarioUsername}</a>
-                  <button onClick={handleLogout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Sair</button>
-                </React.Fragment>
-              ) : (
+              {!usuarioUsername && (
                 <button onClick={() => setIsAuthModalOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Entrar</button>
               )}
               {isAdmin && <button onClick={toggleModoCatalogo} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">{modoCatalogo ? 'Voltar pra minha biblioteca' : 'Ver catálogo completo'}</button>}
               {usuarioUsername && !modoCatalogo && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
+              {/* Sanduíche à direita de tudo — abre o menuzinho de conta
+                  (avatar + username + sair). "Adicionar" fica à esquerda dele
+                  por ordem no DOM (flex row, sem rtl). */}
+              {usuarioUsername && <MenuUsuario username={usuarioUsername} onLogout={handleLogout} />}
             </div>
           </header>
 
@@ -869,12 +865,69 @@
       return `hsl(${Math.abs(hash) % 360}, 55%, 40%)`;
     }
 
+    // Menu de conta no cabeçalho da index — o próprio avatar da pessoa (bolinha
+    // colorida com a inicial do username) funciona como gatilho, deixando claro
+    // que já está logado. Ao clicar, abre um dropdown pequeno (avatar + username,
+    // link pro próprio perfil, e Sair embaixo). Fecha sozinho ao clicar fora.
+    function MenuUsuario({ username, onLogout }) {
+      const [aberto, setAberto] = useState(false);
+      const menuRef = useRef(null);
+
+      useEffect(() => {
+        const fecharSeClicouFora = (e) => {
+          if (menuRef.current && !menuRef.current.contains(e.target)) setAberto(false);
+        };
+        document.addEventListener('mousedown', fecharSeClicouFora);
+        return () => document.removeEventListener('mousedown', fecharSeClicouFora);
+      }, []);
+
+      return (
+        <div className="relative flex-shrink-0" ref={menuRef}>
+          <button
+            onClick={() => setAberto((a) => !a)}
+            aria-label="Menu da conta"
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold border-2 border-gray-600 hover:border-gray-400 transition-colors"
+            style={{ backgroundColor: corAvatar(username) }}
+          >
+            {username.charAt(0).toUpperCase()}
+          </button>
+          {aberto && (
+            <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-4 flex flex-col items-center gap-2 z-50">
+              <a
+                href={`/u/${encodeURIComponent(username)}`}
+                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-gray-600"
+                  style={{ backgroundColor: corAvatar(username) }}
+                >
+                  {username.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-white font-semibold text-sm">{username}</span>
+              </a>
+              <button onClick={onLogout} className="text-sm text-gray-400 hover:text-gray-200 underline mt-2">Sair</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // Botão de ação de vínculo (amizade ou familiar) no cabeçalho do perfil —
     // os 4 estados descritos na wiki ("Estados do botão"): nenhum vínculo,
     // pendente (eu pedi / me pediram), aceito. Reusado pros dois tipos.
     function VinculoButton({ tipo, rotulo, vinculo, meuId, donoId, onChange }) {
       const [enviando, setEnviando] = useState(false);
       const [erro, setErro] = useState('');
+      const [aberto, setAberto] = useState(false);
+      const menuRef = useRef(null);
+
+      useEffect(() => {
+        const fecharSeClicouFora = (e) => {
+          if (menuRef.current && !menuRef.current.contains(e.target)) setAberto(false);
+        };
+        document.addEventListener('mousedown', fecharSeClicouFora);
+        return () => document.removeEventListener('mousedown', fecharSeClicouFora);
+      }, []);
 
       const chamar = async (fn) => {
         setErro(''); setEnviando(true);
@@ -886,31 +939,96 @@
       const pedir = () => chamar(() => axios.post(`${BACKEND_URL}/vinculos`, { destinatario_id: donoId, tipo }));
       const aceitar = () => chamar(() => axios.patch(`${BACKEND_URL}/vinculos/${vinculo.id}`, { status: 'aceito' }));
       const recusarOuCancelar = () => chamar(() => axios.patch(`${BACKEND_URL}/vinculos/${vinculo.id}`, { status: 'recusado' }));
-      const desfazer = () => chamar(() => axios.delete(`${BACKEND_URL}/vinculos/${vinculo.id}`));
+      const desfazer = () => chamar(() => { setAberto(false); return axios.delete(`${BACKEND_URL}/vinculos/${vinculo.id}`); });
 
       const btnClasse = "px-4 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
       let conteudo;
       if (!vinculo || vinculo.status === 'recusado') {
         conteudo = <button disabled={enviando} onClick={pedir} className={`${btnClasse} bg-blue-600 hover:bg-blue-700 text-white`}>Adicionar {rotulo}</button>;
       } else if (vinculo.status === 'pendente' && vinculo.solicitante_id === meuId) {
+        // Mesmo padrão do estado "aceito" (botão + dropdown), sem o check —
+        // eu que pedi, ainda esperando resposta do outro lado.
         conteudo = (
-          <div className="flex items-center gap-2">
-            <span className={`${btnClasse} bg-gray-700 text-gray-300 cursor-default`}>Solicitação enviada</span>
-            <button disabled={enviando} onClick={recusarOuCancelar} className="text-xs text-gray-400 hover:text-gray-300 underline">Cancelar</button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setAberto((a) => !a)}
+              className={`${btnClasse} bg-gray-700 hover:bg-gray-600 text-gray-200 flex items-center gap-1.5`}
+            >
+              {rotulo === 'amigo' ? 'Amigos' : 'Família'}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {aberto && (
+              <div className="absolute left-0 mt-1 w-52 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-1.5 z-50">
+                <button
+                  disabled={enviando}
+                  onClick={() => { setAberto(false); recusarOuCancelar(); }}
+                  className="w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-700 px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
           </div>
         );
       } else if (vinculo.status === 'pendente') {
+        // Mesmo padrão do estado "aceito" (botão + dropdown), sem o check —
+        // o vínculo ainda não foi aceito, só pedido pra mim.
         conteudo = (
-          <div className="flex items-center gap-2">
-            <button disabled={enviando} onClick={aceitar} className={`${btnClasse} bg-green-600 hover:bg-green-700 text-white`}>Aceitar solicitação</button>
-            <button disabled={enviando} onClick={recusarOuCancelar} className={`${btnClasse} bg-gray-700 hover:bg-gray-600 text-gray-300`}>Recusar</button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setAberto((a) => !a)}
+              className={`${btnClasse} bg-gray-700 hover:bg-gray-600 text-gray-200 flex items-center gap-1.5`}
+            >
+              {rotulo === 'amigo' ? 'Amigos' : 'Família'}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {aberto && (
+              <div className="absolute left-0 mt-1 w-52 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-1.5 z-50 flex flex-col gap-1">
+                <button
+                  disabled={enviando}
+                  onClick={() => { setAberto(false); aceitar(); }}
+                  className="w-full text-left text-sm text-green-400 hover:text-green-300 hover:bg-gray-700 px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Aceitar
+                </button>
+                <button
+                  disabled={enviando}
+                  onClick={() => { setAberto(false); recusarOuCancelar(); }}
+                  className="w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-700 px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Recusar
+                </button>
+              </div>
+            )}
           </div>
         );
       } else {
         conteudo = (
-          <div className="flex items-center gap-2">
-            <span className={`${btnClasse} bg-gray-700 text-gray-300 cursor-default`}>{rotulo === 'amigo' ? 'Amigos ✓' : 'Família ✓'}</span>
-            <button disabled={enviando} onClick={desfazer} className="text-xs text-gray-400 hover:text-gray-300 underline">Desfazer</button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setAberto((a) => !a)}
+              className={`${btnClasse} bg-gray-700 hover:bg-gray-600 text-gray-200 flex items-center gap-1.5`}
+            >
+              {rotulo === 'amigo' ? 'Amigos ✓' : 'Família ✓'}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {aberto && (
+              <div className="absolute left-0 mt-1 w-52 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-1.5 z-50">
+                <button
+                  disabled={enviando}
+                  onClick={desfazer}
+                  className="w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-700 px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {rotulo === 'amigo' ? 'Desfazer amizade' : 'Desfazer vínculo familiar'}
+                </button>
+              </div>
+            )}
           </div>
         );
       }
@@ -958,14 +1076,14 @@
         <div className="mb-8 space-y-3">
           <h2 className="text-lg font-bold text-white">Solicitações pendentes</h2>
           {pendentes.map((p) => (
-            <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-gray-200 text-sm">
+            <div key={p.id} className="bg-yellow-900/60 border border-yellow-600 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-yellow-50 text-sm">
                 <span className="font-semibold">{p.solicitante_username}</span>{' '}
                 {p.tipo === 'amizade' ? 'quer ser seu amigo.' : 'quer criar um vínculo familiar com você.'}
               </p>
               <div className="flex gap-2 flex-shrink-0">
                 <button disabled={processando === p.id} onClick={() => resolver(p.id, 'aceito')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-semibold text-white">Aceitar</button>
-                <button disabled={processando === p.id} onClick={() => resolver(p.id, 'recusado')} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm text-gray-300">Recusar</button>
+                <button disabled={processando === p.id} onClick={() => resolver(p.id, 'recusado')} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-semibold text-white">Recusar</button>
               </div>
             </div>
           ))}
@@ -992,6 +1110,15 @@
         return payload ? payload.usuario_id : null;
       }, []);
       const ehMeuProprioPerfil = !!meuUsername && meuUsername === username;
+
+      // Mesmo comportamento do handleLogout da index — aqui volta pra "/" em
+      // vez de só limpar estado local, já que essa página não tem IndexPage
+      // por trás pra re-renderizar sem usuário.
+      const handleLogoutPerfil = () => {
+        localStorage.removeItem('gameLibToken');
+        localStorage.removeItem('gameLibUsername');
+        window.location.href = '/';
+      };
 
       const carregarPerfil = useCallback(async () => {
         try {
@@ -1055,7 +1182,17 @@
 
       return (
         <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
-          <a href="/" className="text-sm text-blue-400 hover:text-blue-300 underline">← Minha biblioteca</a>
+          {/* Mesmo cabeçalho da index (título + menu de conta à direita) — sem
+              o menu, navegar pro perfil de outra pessoa deixava a conta "sem
+              dono" na tela, sem acesso a Sair/próprio perfil até voltar pra
+              index. Sem botão de voltar separado: o próprio título já linka
+              pra index, único destino possível por enquanto. */}
+          <header className="flex justify-between items-center mb-8">
+            <h1 className="text-4xl font-bold text-white">
+              <a href="/" className="hover:text-gray-200 transition-colors">Laricks Biblioteca de Jogos</a>
+            </h1>
+            {meuUsername && <MenuUsuario username={meuUsername} onLogout={handleLogoutPerfil} />}
+          </header>
 
           {/* Cabeçalho estilo Instagram: avatar à esquerda, identidade + ações à direita. */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 my-8">
