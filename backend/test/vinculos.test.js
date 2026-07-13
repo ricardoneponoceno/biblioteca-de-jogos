@@ -95,6 +95,49 @@ test('convite reverso pendente vira aceite, não cria 2º registro', async () =>
   assert.equal(r.rows[0].n, 1);
 });
 
+// Lacuna fechada pela migration 0008: antes, só a UNIQUE (solicitante,
+// destinatario, tipo) existia — pedir na direção oposta de uma amizade já
+// ACEITA não caía em nenhum dos desvios acima (o "reverso" só cobre pendente)
+// e criava um segundo registro pro mesmo par. Agora o par é único no banco,
+// então o endpoint precisa devolver 409 nessa hora, não 500.
+test('POST /vinculos na direção oposta de uma amizade já aceita -> 409, não cria 2º registro', async () => {
+  const a = await app.criarUsuario('a4b');
+  const b = await app.criarUsuario('b4b');
+  const criado = await (await post('/vinculos', { token: a.token, body: { destinatario_id: b.id, tipo: 'amizade' } })).json();
+  await patch(`/vinculos/${criado.id}`, { token: b.token, body: { status: 'aceito' } });
+
+  const invertido = await post('/vinculos', { token: b.token, body: { destinatario_id: a.id, tipo: 'amizade' } });
+  assert.equal(invertido.status, 409);
+
+  const r = await app.pool.query(
+    'SELECT count(*)::int AS n FROM vinculos WHERE (solicitante_id = $1 AND destinatario_id = $2) OR (solicitante_id = $2 AND destinatario_id = $1)',
+    [a.id, b.id]
+  );
+  assert.equal(r.rows[0].n, 1);
+});
+
+test('POST /vinculos depois de recusado na direção oposta reabre o mesmo registro, com solicitante atualizado', async () => {
+  const a = await app.criarUsuario('a4c');
+  const b = await app.criarUsuario('b4c');
+  const criado = await (await post('/vinculos', { token: a.token, body: { destinatario_id: b.id, tipo: 'amizade' } })).json();
+  await patch(`/vinculos/${criado.id}`, { token: b.token, body: { status: 'recusado' } });
+
+  // Dessa vez é B quem pede pra A (direção oposta da tentativa original).
+  const retry = await post('/vinculos', { token: b.token, body: { destinatario_id: a.id, tipo: 'amizade' } });
+  assert.equal(retry.status, 201);
+  const body = await retry.json();
+  assert.equal(body.id, criado.id); // reabre o mesmo registro, não cria um novo
+  assert.equal(body.status, 'pendente');
+  assert.equal(body.solicitante_id, b.id);
+  assert.equal(body.destinatario_id, a.id);
+
+  const r = await app.pool.query(
+    'SELECT count(*)::int AS n FROM vinculos WHERE (solicitante_id = $1 AND destinatario_id = $2) OR (solicitante_id = $2 AND destinatario_id = $1)',
+    [a.id, b.id]
+  );
+  assert.equal(r.rows[0].n, 1);
+});
+
 test('PATCH aceitar: só o destinatário pode (solicitante tentando -> 403)', async () => {
   const a = await app.criarUsuario('a5');
   const b = await app.criarUsuario('b5');

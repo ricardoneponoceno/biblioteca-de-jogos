@@ -469,12 +469,15 @@ app.post('/vinculos', autenticar, async (req, res) => {
       return res.status(200).json(aceito.rows[0]);
     }
 
-    // Já existe um registro nessa direção exata? A UNIQUE (solicitante,
-    // destinatario, tipo) não distingue por status — sem esta checagem, um
-    // pedido recusado uma vez ficaria bloqueado (23505) pra sempre nessa
-    // direção, mesmo a pessoa querendo tentar de novo.
+    // Já existe um registro entre esses dois, nesse tipo — em QUALQUER direção?
+    // A UNIQUE é por par (0008), não por direção, então também não distingue
+    // por status — sem esta checagem, um pedido recusado uma vez ficaria
+    // bloqueado (23505) pra sempre entre esses dois, mesmo a pessoa querendo
+    // tentar de novo.
     const existente = await db.query(
-      `SELECT * FROM vinculos WHERE solicitante_id = $1 AND destinatario_id = $2 AND tipo = $3`,
+      `SELECT * FROM vinculos
+       WHERE tipo = $3
+         AND ((solicitante_id = $1 AND destinatario_id = $2) OR (solicitante_id = $2 AND destinatario_id = $1))`,
       [req.usuario.id, destinatario_id, tipo]
     );
     if (existente.rows.length > 0) {
@@ -482,11 +485,13 @@ app.post('/vinculos', autenticar, async (req, res) => {
       if (atual.status !== 'recusado') {
         return res.status(409).json({ error: 'Já existe um pedido desse tipo entre vocês.' });
       }
-      // Recusado antes: pedir de novo reabre o mesmo registro em vez de criar
-      // um segundo (a UNIQUE não permitiria de qualquer forma).
+      // Recusado antes (em qualquer direção): reabre o mesmo registro em vez de
+      // criar um segundo (o par é único no banco, não teria como criar de
+      // qualquer forma) — solicitante/destinatario são atualizados pra refletir
+      // quem está pedindo agora, já que pode ser a direção oposta da vez anterior.
       const reaberto = await db.query(
-        `UPDATE vinculos SET status = 'pendente', created_at = now(), resolved_at = NULL WHERE id = $1 RETURNING *`,
-        [atual.id]
+        `UPDATE vinculos SET status = 'pendente', solicitante_id = $1, destinatario_id = $2, created_at = now(), resolved_at = NULL WHERE id = $3 RETURNING *`,
+        [req.usuario.id, destinatario_id, atual.id]
       );
       return res.status(201).json(reaberto.rows[0]);
     }

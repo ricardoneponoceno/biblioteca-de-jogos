@@ -68,9 +68,18 @@ test('status default é pendente', async () => {
   assert.equal(r.rows[0].status, 'pendente');
 });
 
-test('UNIQUE (solicitante, destinatario, tipo) barra duplicata', async () => {
-  await inserirVinculo(userB, userA, 'amizade');
-  await assert.rejects(inserirVinculo(userB, userA, 'amizade'), /duplicate key|unique/i);
+test('UNIQUE por par (0008) barra duplicata, inclusive na direção oposta', async () => {
+  // Usuários próprios pra este teste, não os globais (a/b/c) — a "status
+  // default é pendente" acima já deixou um (userA, userB, amizade) na tabela,
+  // e como a UNIQUE agora é por par (não por direção), reusar userA/userB
+  // aqui colidiria com aquele registro antes mesmo do assert.rejects rodar.
+  const d1 = (await pool.query("INSERT INTO usuarios (username, password_hash) VALUES ('d1', 'x') RETURNING id")).rows[0].id;
+  const d2 = (await pool.query("INSERT INTO usuarios (username, password_hash) VALUES ('d2', 'x') RETURNING id")).rows[0].id;
+  await inserirVinculo(d1, d2, 'amizade');
+  await assert.rejects(inserirVinculo(d1, d2, 'amizade'), /duplicate key|unique/i);
+  // A própria lacuna que a 0008 fecha: antes, essa segunda linha (direção
+  // invertida) passava batido pela UNIQUE antiga.
+  await assert.rejects(inserirVinculo(d2, d1, 'amizade'), /duplicate key|unique/i);
 });
 
 test('o mesmo par pode ter amizade e vínculo familiar (tipos diferentes)', async () => {
