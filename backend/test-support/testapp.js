@@ -61,10 +61,11 @@ async function startTestApp() {
       return r.rows[0].id;
     },
     async criarPosse(usuarioId, jogoId, plataformaId) {
-      await pool.query(
-        'INSERT INTO posses (usuario_id, jogo_id, plataforma_id) VALUES ($1, $2, $3)',
+      const r = await pool.query(
+        'INSERT INTO posses (usuario_id, jogo_id, plataforma_id) VALUES ($1, $2, $3) RETURNING id',
         [usuarioId, jogoId, plataformaId]
       );
+      return { id: r.rows[0].id };
     },
     // Vínculo já aceito, direto no banco — os testes de máquina de estados
     // (3b-i) já cobrem o ciclo pedir/aceitar via endpoint; aqui só precisamos
