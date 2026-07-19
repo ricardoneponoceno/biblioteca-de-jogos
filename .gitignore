@@ -5,6 +5,10 @@
 /backend/.env
 /backend/.env.local
 
+# Ficheiros de variáveis de ambiente dos proxies RAWG/HLTB
+/api-rawg/.env
+/api-hltb/.env
+
 # Dump de dado real de produção (catálogo legado pro backfill do #15) — passado
 # fora do git, nunca versionado
 /backend/legado-jogos-generos.sql

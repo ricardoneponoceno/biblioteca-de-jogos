@@ -102,9 +102,14 @@ Gerar sua chave da **API** do **RAWG** em: https://rawg.io/apidocs
    DB_NAME=gamelib_db
    CORS_ORIGIN=http://localhost:8081
    ```
-   Acesse a pasta `api-rawg` e configure a sua chave da API do RAWG no arquivo `.env`:
+   Acesse a pasta `api-rawg` e configure a sua chave da API do RAWG e o CORS no arquivo `.env`:
    ```env
    RAWG_API_KEY=sua_chave_aqui
+   CORS_ORIGIN=http://localhost:8081
+   ```
+   Acesse a pasta `api-hltb` e crie um arquivo `.env` com o CORS:
+   ```env
+   CORS_ORIGIN=http://localhost:8081
    ```
 
 3. **Suba os contêineres com o Docker Compose:**

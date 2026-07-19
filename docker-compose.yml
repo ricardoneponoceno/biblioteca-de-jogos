@@ -52,8 +52,8 @@ services:
       dockerfile: Dockerfile
     container_name: gamelib-api-hltb
     restart: unless-stopped
-    environment: 
-      - CORS_ORIGIN=http://localhost:8081
+    env_file:
+      - ./api-hltb/.env # CORS_ORIGIN — sem isso, cai no default do api.py (CORS desativado)
     ports:
       - "3002:8000" # Mapeia a porta 3002 do seu PC para a 8000 do contentor
     networks:
@@ -67,9 +67,7 @@ services:
     container_name: gamelib-api-rawg
     restart: unless-stopped
     env_file:
-      - ./api-rawg/.env # Carrega a chave de API do ficheiro .env
-    environment:
-      - CORS_ORIGIN=http://localhost:8081
+      - ./api-rawg/.env # Carrega a chave de API e o CORS_ORIGIN do ficheiro .env
     ports:
       - "3003:8000" # Mapeia a porta 3003 do seu PC para a 8000 do contentor
     networks:
