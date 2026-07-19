@@ -399,33 +399,48 @@ app.delete('/posses/:id', autenticar, async (req, res) => {
   }
 });
 
-// Consulta central da Fase 2c — sem a parte de amizade/co-posse (Fase 3), só
-// WHERE p.usuario_id = :eu. GET /jogos permanece intacto, servindo de busca
-// do catálogo pro autocomplete de "adicionar à biblioteca" (Fase 2d).
+// Consulta central da Fase 2c, estendida na Fase 3 do #1 (fechada depois do
+// #3): além de WHERE p.usuario_id = :eu, agora inclui as posses de quem tem
+// vínculo familiar aceito comigo — biblioteca efetiva, mesmo padrão do #3
+// (membrosEfetivaSql, abaixo). Diferente do perfil, aqui a origem DEVE
+// aparecer (origem_username) — é a minha própria tela, faz sentido saber de
+// quem veio cada jogo emprestado. Quando eu e o familiar temos o mesmo
+// jogo+plataforma, prefere a MINHA posse (fica editável) — dedup por
+// DISTINCT ON, desempatando por "é minha" antes de "é do familiar".
+// GET /jogos permanece intacto, servindo de busca do catálogo pro
+// autocomplete de "adicionar à biblioteca" (Fase 2d).
 app.get('/biblioteca', autenticar, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT
-         p.id AS posse_id,
-         p.data_aquisicao,
-         p.created_at AS posse_created_at,
-         pl.id AS plataforma_id,
-         pl.nome AS plataforma_nome,
-         j.id AS jogo_id,
-         j.titulo,
-         j.lancamento,
-         j.gameplay_minutos,
-         j.metacritic,
-         j.capa,
-         j.plataforma,
-         j.rawg_id,
-         j.hltb_id,
-         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
-       FROM posses p
-       JOIN jogos j ON j.id = p.jogo_id
-       JOIN plataformas pl ON pl.id = p.plataforma_id
-       WHERE p.usuario_id = $1
-       ORDER BY j.titulo ASC`,
+      `WITH membros AS (${membrosEfetivaSql(1)}),
+            candidatos AS (
+              SELECT DISTINCT ON (p.jogo_id, p.plataforma_id)
+                p.id AS posse_id,
+                p.data_aquisicao,
+                p.created_at AS posse_created_at,
+                pl.id AS plataforma_id,
+                pl.nome AS plataforma_nome,
+                j.id AS jogo_id,
+                j.titulo,
+                j.lancamento,
+                j.gameplay_minutos,
+                j.metacritic,
+                j.capa,
+                j.plataforma,
+                j.rawg_id,
+                j.hltb_id,
+                CASE WHEN p.usuario_id = $1 THEN NULL ELSE u.username END AS origem_username
+              FROM posses p
+              JOIN membros m ON m.usuario_id = p.usuario_id
+              JOIN usuarios u ON u.id = p.usuario_id
+              JOIN jogos j ON j.id = p.jogo_id
+              JOIN plataformas pl ON pl.id = p.plataforma_id
+              ORDER BY p.jogo_id, p.plataforma_id, (p.usuario_id = $1) DESC
+            )
+       SELECT c.*,
+         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = c.jogo_id) AS generos
+       FROM candidatos c
+       ORDER BY c.titulo ASC`,
       [req.usuario.id]
     );
     res.status(200).json(result.rows);
