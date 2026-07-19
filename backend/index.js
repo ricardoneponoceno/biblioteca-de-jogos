@@ -2,7 +2,22 @@
 require('dotenv').config({ path: './.env' });
 const express = require('express');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const db = require('./db');
+
+const JWT_SECRET = process.env.JWT_SECRET;
+// Falha cedo, no boot, em vez de subir "saudável" e só quebrar na primeira
+// requisição de auth — sem o segredo, assinar/verificar token é impossível.
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET não definido — configure a variável de ambiente antes de iniciar o servidor.');
+}
+const JWT_EXPIRES_IN = '30d';
+// Hash "de mentira" pra comparar quando o username não existe — sem isso, bcrypt.compare()
+// só roda quando o usuário é encontrado, e login com username inexistente responde muito
+// mais rápido que senha errada (mesma mensagem de erro, tempo de resposta diferente:
+// um atacante consegue enumerar usernames cadastrados só medindo o tempo).
+const DUMMY_HASH = bcrypt.hashSync('senha-de-mentira-so-pra-gastar-tempo-de-cpu', 10);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -18,6 +33,9 @@ const corsOptions = {
       callback(new Error('Não permitido pela política de CORS'));
     }
   },
+  // Sem isso, o navegador não deixa o JS ler o header X-New-Token da resposta —
+  // CORS só expõe um conjunto pequeno de headers "seguros" por padrão.
+  exposedHeaders: ['X-New-Token'],
 };
 
 app.use(cors(corsOptions));
@@ -34,6 +52,109 @@ app.get('/config', (req, res) => {
     hltbApiUrl: process.env.HLTB_API_URL,
     rawgApiUrl: process.env.RAWG_API_URL,
   });
+});
+
+function assinarToken(usuario) {
+  return jwt.sign({ usuario_id: usuario.id, is_admin: usuario.is_admin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN, algorithm: 'HS256' });
+}
+
+const QUINZE_DIAS_EM_SEGUNDOS = 15 * 24 * 60 * 60;
+
+// Exige um JWT válido no header Authorization: Bearer <token>. Renovação deslizante:
+// se faltar menos de 15 dias pra expirar, devolve um token novo no header X-New-Token
+// (o frontend precisa checar esse header em toda resposta e substituir o token guardado).
+function autenticar(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Não autenticado.' });
+  }
+  const token = authHeader.slice('Bearer '.length);
+  try {
+    // algorithms explícito: não deixa o verify aceitar nada além de HS256
+    // (defesa contra algorithm confusion caso um dia se use chave assimétrica).
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    // is_admin do token é só dica de UI (o frontend decodifica pra mostrar/esconder
+    // botões); a autorização de verdade é o apenasAdmin, que relê is_admin do banco.
+    req.usuario = { id: payload.usuario_id, is_admin: payload.is_admin };
+
+    const segundosRestantes = payload.exp - Math.floor(Date.now() / 1000);
+    if (segundosRestantes < QUINZE_DIAS_EM_SEGUNDOS) {
+      res.setHeader('X-New-Token', assinarToken(req.usuario));
+    }
+
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido ou expirado.' });
+  }
+}
+
+// Exige que o usuário autenticado (já validado por autenticar()) seja admin. Usado nas
+// rotas que editam o catálogo canônico de jogos — não confundir com o uso normal do app
+// (gerenciar a própria biblioteca), que não exige is_admin nenhum.
+// Relê is_admin do banco em vez de confiar no claim do token: senão uma demoção
+// (is_admin -> false no banco) nunca teria efeito, porque o token antigo — e cada
+// token renovado a partir dele — continuaria dizendo is_admin: true pra sempre.
+async function apenasAdmin(req, res, next) {
+  try {
+    const result = await db.query('SELECT is_admin FROM usuarios WHERE id = $1', [req.usuario.id]);
+    const usuario = result.rows[0];
+    if (!usuario || !usuario.is_admin) {
+      return res.status(403).json({ error: 'Apenas administradores podem realizar esta ação.' });
+    }
+    next();
+  } catch (err) {
+    console.error('Erro ao verificar permissão de admin:', err);
+    res.status(500).json({ error: 'Erro ao verificar permissão.' });
+  }
+}
+
+app.post('/registro', async (req, res) => {
+  const { username, password } = req.body;
+  // typeof antes de qualquer uso: um array (ex: password: ["a","b","c","d","e","f"])
+  // tem .length e passaria na checagem de tamanho, quebrando só lá no bcrypt.
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, 10);
+    const result = await db.query(
+      'INSERT INTO usuarios(username, password_hash) VALUES ($1, $2) RETURNING id, username, is_admin',
+      [username.trim().toLowerCase(), password_hash]
+    );
+    const usuario = result.rows[0];
+    res.status(201).json({ token: assinarToken(usuario) });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Esse username já está cadastrado.' });
+    }
+    console.error('Erro ao registrar usuário:', err);
+    res.status(500).json({ error: 'Erro ao registrar usuário.' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
+  }
+  try {
+    const result = await db.query('SELECT id, username, password_hash, is_admin FROM usuarios WHERE username = $1', [username.trim().toLowerCase()]);
+    const usuario = result.rows[0];
+    // Roda bcrypt.compare() sempre, mesmo sem usuário (contra o DUMMY_HASH) — o tempo de
+    // resposta fica igual nos dois casos, sem vazar quais usernames estão cadastrados.
+    const senhaValida = await bcrypt.compare(password, usuario ? usuario.password_hash : DUMMY_HASH);
+    // Mensagem genérica de propósito — não indica se o username existe ou se a senha está errada.
+    if (!usuario || !senhaValida) {
+      return res.status(401).json({ error: 'Username ou senha inválidos.' });
+    }
+    res.status(200).json({ token: assinarToken(usuario) });
+  } catch (err) {
+    console.error('Erro ao fazer login:', err);
+    res.status(500).json({ error: 'Erro ao fazer login.' });
+  }
 });
 
 app.get('/generos', async (req, res) => {
@@ -109,7 +230,13 @@ app.get('/jogos', async (req, res) => {
     }
 });
 
-app.post('/jogos', async (req, res) => {
+// Fase 2g: cadastrar jogo novo abre pra qualquer logado (sem apenasAdmin) —
+// quem precisa do jogo cadastrado é quem vai tê-lo na biblioteca, não o admin.
+// Editar/excluir jogo já existente (PUT/DELETE abaixo) continuam apenasAdmin:
+// mexem em dado que outras pessoas já possuem, risco maior que só criar linha nova.
+// Lacuna aceita conscientemente: sem fila de moderação ainda, o cadastro fica
+// visível a todo mundo sem revisão — ok pros 3 usuários conhecidos hoje.
+app.post('/jogos', autenticar, async (req, res) => {
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
@@ -147,7 +274,7 @@ app.post('/jogos', async (req, res) => {
   }
 });
 
-app.put('/jogos/:id', async (req, res) => {
+app.put('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
   const { id } = req.params;
   const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
   if (!lancamento || lancamento === '') {
@@ -193,7 +320,7 @@ app.put('/jogos/:id', async (req, res) => {
   }
 });
 
-app.delete('/jogos/:id', async (req, res) => {
+app.delete('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
     try {
@@ -214,6 +341,107 @@ app.delete('/jogos/:id', async (req, res) => {
     } finally {
         client.release();
     }
+});
+
+// --- Biblioteca pessoal (posses) — Fase 2b da #1 ---
+
+app.get('/plataformas', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM plataformas ORDER BY nome ASC');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar plataformas:', err);
+    res.status(500).json({ error: 'Erro ao procurar as plataformas.' });
+  }
+});
+
+// Sem apenasAdmin: gerir a própria biblioteca é ação de qualquer usuário logado.
+app.post('/posses', autenticar, async (req, res) => {
+  const { jogo_id, plataforma_id, data_aquisicao } = req.body;
+  if (!jogo_id || !plataforma_id) {
+    return res.status(400).json({ error: 'jogo_id e plataforma_id são obrigatórios.' });
+  }
+  try {
+    const result = await db.query(
+      'INSERT INTO posses (usuario_id, jogo_id, plataforma_id, data_aquisicao) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.usuario.id, jogo_id, plataforma_id, data_aquisicao || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Você já tem esse jogo cadastrado nessa plataforma.' });
+    }
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Jogo ou plataforma inexistente.' });
+    }
+    console.error('Erro ao criar posse:', err);
+    res.status(500).json({ error: 'Erro ao adicionar o jogo à biblioteca.' });
+  }
+});
+
+app.delete('/posses/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM posses WHERE id = $1 AND usuario_id = $2', [id, req.usuario.id]);
+    if (result.rowCount > 0) {
+      return res.status(204).send();
+    }
+    // O delete acima não diferencia "não existe" de "existe mas não é seu" — só
+    // consulta de novo (sem o filtro de dono) pra decidir entre 404 e 403.
+    const existe = await db.query('SELECT id FROM posses WHERE id = $1', [id]);
+    if (existe.rows.length === 0) {
+      return res.status(404).json({ error: 'Posse não encontrada.' });
+    }
+    return res.status(403).json({ error: 'Você só pode remover posses da sua própria biblioteca.' });
+  } catch (err) {
+    console.error('Erro ao deletar posse:', err);
+    res.status(500).json({ error: 'Erro ao remover o jogo da biblioteca.' });
+  }
+});
+
+// Consulta central da Fase 2c — sem a parte de amizade/co-posse (Fase 3), só
+// WHERE p.usuario_id = :eu. GET /jogos permanece intacto, servindo de busca
+// do catálogo pro autocomplete de "adicionar à biblioteca" (Fase 2d).
+app.get('/biblioteca', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT
+         p.id AS posse_id,
+         p.data_aquisicao,
+         p.created_at AS posse_created_at,
+         pl.id AS plataforma_id,
+         pl.nome AS plataforma_nome,
+         j.id AS jogo_id,
+         j.titulo,
+         j.lancamento,
+         j.gameplay_minutos,
+         j.metacritic,
+         j.capa,
+         j.plataforma,
+         j.rawg_id,
+         j.hltb_id,
+         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
+       FROM posses p
+       JOIN jogos j ON j.id = p.jogo_id
+       JOIN plataformas pl ON pl.id = p.plataforma_id
+       WHERE p.usuario_id = $1
+       ORDER BY j.titulo ASC`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar biblioteca:', err);
+    res.status(500).json({ error: 'Erro ao procurar a biblioteca.' });
+  }
+});
+
+// Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
+// maior que o limite do body-parser) caem na página de erro padrão do Express, que
+// devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
+// res, next) pra o Express reconhecer como error handler, mesmo sem usar "next".
+app.use((err, req, res, next) => {
+  console.error('Erro não tratado:', err);
+  res.status(err.status || 500).json({ error: 'Erro interno do servidor.' });
 });
 
 app.listen(port, () => {
