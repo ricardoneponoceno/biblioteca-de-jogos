@@ -5,7 +5,7 @@
 /backend/.env
 /backend/.env.local
 
-# Ficheiros de variáveis de ambiente dos proxies RAWG/HLTB
+# Arquivos de variáveis de ambiente dos proxies RAWG/HLTB
 /api-rawg/.env
 /api-hltb/.env
 
