@@ -14,3 +14,9 @@ npm-debug.log
 
 # Ficheiro de configuração do Frontend (NÃO VERSIONAR)
 /frontend/config.js
+
+# Notas e propostas pessoais de desenvolvimento (não faz parte do repo original)
+/notas-marcelo/
+
+# Ajustes pessoais de ambiente (porta local, etc.) — mesclado automaticamente pelo Docker Compose
+/docker-compose.override.yml

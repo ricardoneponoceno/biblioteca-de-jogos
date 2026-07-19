@@ -112,7 +112,20 @@ Gerar sua chave da **API** do **RAWG** em: https://rawg.io/apidocs
    docker compose up -d --build
    ```
 
-4. **Acesse a aplicação:**
+4. **Aplique o schema do banco (migrations):**
+   O banco sobe vazio — o schema é criado pelas migrations, não automaticamente. Rode:
+   ```bash
+   docker compose exec backend npm run migrate
+   ```
+   O comando é idempotente: aplica só o que ainda falta e pode ser rodado quantas vezes quiser. Sempre que houver uma migration nova (após um `git pull`, por exemplo), rode-o de novo.
+
+5. **(Opcional) Popule dados de exemplo (seed):**
+   Para um ambiente de desenvolvimento já com jogos e a lista de gêneros:
+   ```bash
+   docker compose exec backend npm run seed
+   ```
+
+6. **Acesse a aplicação:**
    Abra seu navegador em `http://localhost:8081`. 
    
    *Nota: Para habilitar os botões de edição/adição, acesse `http://localhost:8081?mode=admin` na primeira vez.*
