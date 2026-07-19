@@ -435,6 +435,242 @@ app.get('/biblioteca', autenticar, async (req, res) => {
   }
 });
 
+// --- Importador por plataforma — Fase 4b da #4 ---
+
+// Lista as contas de plataforma já vinculadas pelo usuário — usado pelo
+// frontend (4e) pra saber se mostra "vincular" ou "atualizar/importar".
+app.get('/contas-plataforma', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT ca.*, p.nome AS plataforma_nome
+       FROM contas_plataforma ca
+       JOIN plataformas p ON p.id = ca.plataforma_id
+       WHERE ca.usuario_id = $1`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar contas de plataforma:', err);
+    res.status(500).json({ error: 'Erro ao procurar as contas vinculadas.' });
+  }
+});
+
+// Vincula (ou atualiza) a conta externa do usuário numa plataforma. Upsert:
+// vincular de novo com um id diferente corrige, sem precisar de endpoint de
+// editar separado.
+app.post('/contas-plataforma', autenticar, async (req, res) => {
+  const { plataforma_id, identificador_externo } = req.body;
+  if (!plataforma_id || typeof identificador_externo !== 'string' || !identificador_externo.trim()) {
+    return res.status(400).json({ error: 'plataforma_id e identificador_externo são obrigatórios.' });
+  }
+  try {
+    const result = await db.query(
+      `INSERT INTO contas_plataforma (usuario_id, plataforma_id, identificador_externo)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (usuario_id, plataforma_id) DO UPDATE SET identificador_externo = EXCLUDED.identificador_externo
+       RETURNING *`,
+      [req.usuario.id, plataforma_id, identificador_externo.trim()]
+    );
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Plataforma inexistente.' });
+    }
+    console.error('Erro ao vincular conta de plataforma:', err);
+    res.status(500).json({ error: 'Erro ao vincular a conta.' });
+  }
+});
+
+const STEAM_API_KEY = process.env.STEAM_API_KEY;
+
+// Só uma importação em andamento por usuário — a rotina limpa e repopula
+// importacoes_pendentes, não é seguro duas chamadas concorrentes fazendo isso
+// ao mesmo tempo (dois cliques, duas abas). Trava em memória (não em
+// transação de banco) de propósito: a chamada pra Steam é externa e pode
+// demorar, e segurar uma transação aberta por todo esse tempo prenderia uma
+// conexão do pool sem necessidade. Suficiente pra este app (processo único,
+// sem clustering).
+const importacoesEmAndamento = new Set();
+
+// Fase 4c: importa a biblioteca da Steam pra importacoes_pendentes (staging).
+// Não toca em jogos nem cria posse aqui — só grava o material bruto pra
+// revisão humana depois (Fase 4d/4f). Checagem em duas camadas, escopada por
+// plataforma: já existe posse com esse appid (já resolvido antes, mesmo que o
+// pendente já tenha sido limpo) → pula; senão já existe pendente com esse
+// título (ainda esperando revisão) → pula; senão insere.
+app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
+  if (!STEAM_API_KEY) {
+    return res.status(500).json({ error: 'Importador da Steam não configurado (falta STEAM_API_KEY).' });
+  }
+  if (importacoesEmAndamento.has(req.usuario.id)) {
+    return res.status(409).json({ error: 'Já existe uma importação em andamento pra essa conta. Aguarde terminar.' });
+  }
+  importacoesEmAndamento.add(req.usuario.id);
+  try {
+    const contaResult = await db.query(
+      `SELECT ca.identificador_externo, ca.plataforma_id
+       FROM contas_plataforma ca
+       JOIN plataformas p ON p.id = ca.plataforma_id
+       WHERE ca.usuario_id = $1 AND p.nome = 'Steam'`,
+      [req.usuario.id]
+    );
+    const conta = contaResult.rows[0];
+    if (!conta) {
+      return res.status(400).json({ error: 'Vincule sua conta Steam antes de importar.' });
+    }
+
+    const url = `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${STEAM_API_KEY}&steamid=${conta.identificador_externo}&format=json&include_appinfo=1`;
+    const steamRes = await fetch(url);
+    const steamData = await steamRes.json();
+    const jogosSteam = steamData && steamData.response && steamData.response.games;
+    if (!jogosSteam) {
+      return res.status(422).json({ error: 'Não foi possível ler a biblioteca da Steam. Confira se o perfil e os "detalhes do jogo" estão públicos nas configurações de privacidade da Steam.' });
+    }
+
+    // Limpa TUDO que sobrou do usuário (qualquer plataforma, não só Steam)
+    // antes de popular do zero — evita pendente obsoleto (capa/dado de uma
+    // rodada anterior, dessa ou de outra plataforma) coexistindo com o import
+    // fresco. Se a pessoa ainda quiser ver os pendentes de outra plataforma,
+    // é só rodar a importação daquela de novo — nada se perde de verdade, o
+    // que já virou posse continua fora da lista graças à checagem abaixo. Só
+    // depois de confirmar que a Steam respondeu (jogosSteam acima) — assim
+    // uma falha na chamada não apaga pendentes válidos à toa.
+    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1', [req.usuario.id]);
+
+    let novosPendentes = 0;
+    for (const jogo of jogosSteam) {
+      const appid = String(jogo.appid);
+
+      const jaTemPosse = await db.query(
+        'SELECT 1 FROM posses WHERE usuario_id = $1 AND plataforma_id = $2 AND identificador_externo = $3',
+        [req.usuario.id, conta.plataforma_id, appid]
+      );
+      if (jaTemPosse.rows.length > 0) continue;
+
+      const capa = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
+      const insertResult = await db.query(
+        `INSERT INTO importacoes_pendentes (usuario_id, plataforma_id, identificador_externo, titulo, capa)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (usuario_id, plataforma_id, titulo) DO NOTHING`,
+        [req.usuario.id, conta.plataforma_id, appid, jogo.name, capa]
+      );
+      novosPendentes += insertResult.rowCount;
+    }
+
+    await db.query(
+      'UPDATE contas_plataforma SET ultima_sincronizacao = now() WHERE usuario_id = $1 AND plataforma_id = $2',
+      [req.usuario.id, conta.plataforma_id]
+    );
+
+    res.status(200).json({ total_steam: jogosSteam.length, novos_pendentes: novosPendentes });
+  } catch (err) {
+    console.error('Erro ao importar da Steam:', err);
+    res.status(500).json({ error: 'Erro ao importar da Steam.' });
+  } finally {
+    importacoesEmAndamento.delete(req.usuario.id);
+  }
+});
+
+app.get('/importacoes-pendentes', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT ip.*, p.nome AS plataforma_nome
+       FROM importacoes_pendentes ip
+       JOIN plataformas p ON p.id = ip.plataforma_id
+       WHERE ip.usuario_id = $1 AND ip.jogo_id IS NULL
+       ORDER BY ip.titulo ASC`,
+      [req.usuario.id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erro ao procurar importações pendentes:', err);
+    res.status(500).json({ error: 'Erro ao procurar as importações pendentes.' });
+  }
+});
+
+// Fase 4d: resolve uma importação pendente contra um jogo_id — existente
+// (escolhido numa busca) ou recém-criado via POST /jogos. Grava o vínculo no
+// pendente e cria a posse na mesma transação, copiando identificador_externo
+// e plataforma_id (que a importação já sabia, não precisa perguntar de novo).
+app.patch('/importacoes-pendentes/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  const { jogo_id } = req.body;
+  if (!jogo_id) {
+    return res.status(400).json({ error: 'jogo_id é obrigatório.' });
+  }
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const pendenteResult = await client.query(
+      'SELECT * FROM importacoes_pendentes WHERE id = $1 AND usuario_id = $2 FOR UPDATE',
+      [id, req.usuario.id]
+    );
+    const pendente = pendenteResult.rows[0];
+    if (!pendente) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Importação pendente não encontrada.' });
+    }
+    if (pendente.jogo_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Essa importação já foi resolvida.' });
+    }
+
+    await client.query('UPDATE importacoes_pendentes SET jogo_id = $1, resolvido_em = now() WHERE id = $2', [jogo_id, id]);
+    const posseResult = await client.query(
+      `INSERT INTO posses (usuario_id, jogo_id, plataforma_id, identificador_externo)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [req.usuario.id, jogo_id, pendente.plataforma_id, pendente.identificador_externo]
+    );
+    await client.query('COMMIT');
+    res.status(200).json(posseResult.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Você já tem esse jogo cadastrado nessa plataforma.' });
+    }
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Jogo inexistente.' });
+    }
+    console.error('Erro ao resolver importação pendente:', err);
+    res.status(500).json({ error: 'Erro ao resolver a importação.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Descarta um pendente sem resolver (a pessoa não quer catalogar aquele item).
+// Não afeta a idempotência da próxima sincronização: se o item ainda não tem
+// posse, uma sincronização futura o recria como pendente de novo — descartar
+// não é "nunca mais importar", é só "tirar da fila por ora".
+app.delete('/importacoes-pendentes/:id', autenticar, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM importacoes_pendentes WHERE id = $1 AND usuario_id = $2', [id, req.usuario.id]);
+    if (result.rowCount > 0) {
+      return res.status(204).send();
+    }
+    return res.status(404).json({ error: 'Importação pendente não encontrada.' });
+  } catch (err) {
+    console.error('Erro ao descartar importação pendente:', err);
+    res.status(500).json({ error: 'Erro ao descartar a importação.' });
+  }
+});
+
+// Limpa tudo que sobrou na staging do usuário (resolvido ou não) — chamado
+// pelo frontend ao sair do modo importação. Não afeta o que já virou posse
+// (isso é permanente); reabrir depois é só rodar a sincronização de novo, que
+// já ignora o que já foi resolvido.
+app.delete('/importacoes-pendentes', autenticar, async (req, res) => {
+  try {
+    await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1', [req.usuario.id]);
+    res.status(204).send();
+  } catch (err) {
+    console.error('Erro ao limpar importações pendentes:', err);
+    res.status(500).json({ error: 'Erro ao limpar as importações pendentes.' });
+  }
+});
+
 // Handler de erro genérico — sem isso, exceções não tratadas por uma rota (ex: payload
 // maior que o limite do body-parser) caem na página de erro padrão do Express, que
 // devolve stack trace e caminho de arquivo em HTML. Precisa dos 4 parâmetros (err, req,
