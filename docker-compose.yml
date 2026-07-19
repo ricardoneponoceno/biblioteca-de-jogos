@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: admin
       POSTGRES_DB: gamelib_db
     volumes:
-      - ./postgres-data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     networks:
       - gamelib-network
 
@@ -92,3 +92,10 @@ services:
 networks:
   gamelib-network:
     driver: bridge
+
+# Dado do Postgres em volume nomeado (gerenciado pelo Docker), não bind mount
+# no repo — evita o diretório postgres-data/ com permissão 700 travando o
+# build (o Postgres força 700 no data dir e o build não consegue lê-lo no
+# contexto). Em dev, o banco é recriável com `npm run migrate` + `npm run seed`.
+volumes:
+  pgdata:
