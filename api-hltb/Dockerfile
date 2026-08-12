@@ -18,4 +18,15 @@ EXPOSE 8000
 
 # Comando para iniciar a aplicação com o Gunicorn
 # Substitua "api:app" se o seu arquivo ou instância Flask tiverem nomes diferentes
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "api:app"]
+#
+# Sem --workers o Gunicorn sobe 1 worker sync, e o proxy atende uma requisição
+# por vez: uma busca lenta no HowLongToBeat segura a fila inteira. Como o
+# trabalho aqui é esperar rede, não CPU, threads resolvem melhor que processos —
+# com --threads o Gunicorn já troca sozinho para o worker gthread.
+#
+# O --timeout 30 é só rede de segurança: o limite real é o UPSTREAM_TIMEOUT de
+# 15s da aplicação, que devolve um 504 limpo em vez de deixar o Gunicorn matar o
+# worker e derrubar junto as outras requisições que ele estivesse atendendo.
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", \
+     "--workers", "2", "--threads", "4", "--timeout", "30", \
+     "api:app"]

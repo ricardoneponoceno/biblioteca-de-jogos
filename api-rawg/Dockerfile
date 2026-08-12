@@ -18,4 +18,12 @@ EXPOSE 8000
 
 # Comando para iniciar a aplicação com o Gunicorn
 # Substitua "api:app" se o seu ficheiro ou instância Flask tiverem nomes diferentes
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "api_rawg:app"]
+#
+# Sem --workers o Gunicorn sobe 1 worker sync, e o proxy atende uma requisição
+# por vez: com a RAWG lenta, cada chamada segura a fila inteira por até
+# UPSTREAM_TIMEOUT segundos. Como o trabalho aqui é esperar rede, não CPU,
+# threads resolvem melhor que processos — com --threads o Gunicorn já troca
+# sozinho para o worker gthread.
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", \
+     "--workers", "2", "--threads", "4", "--timeout", "30", \
+     "api_rawg:app"]
