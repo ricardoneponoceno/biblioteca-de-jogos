@@ -7,6 +7,7 @@ import requests
 RAWG_API_KEY = os.environ.get('RAWG_API_KEY')
 RAWG_BASE = "https://api.rawg.io/api/games"
 MAX_RESULTS = 15
+UPSTREAM_TIMEOUT = 10   # segundos que esperamos a RAWG antes de desistir
 
 app = Flask(__name__)
 
@@ -19,6 +20,37 @@ CORS(app, resources={r"/*": {"origins": origins}})
 
 def key_missing():
     return not RAWG_API_KEY or RAWG_API_KEY == "SUA_CHAVE_DE_API_AQUI"
+
+
+def sem_chave(texto):
+    """Remove a chave da API de um texto antes de ele ir para qualquer lugar.
+
+    Vale inclusive para o log: `docker logs` acaba em print de tela, em anexo de
+    chamado e colado em conversa. Chave não deve estar escrita em lugar nenhum
+    além da variável de ambiente.
+    """
+    return texto.replace(RAWG_API_KEY, "***") if RAWG_API_KEY else texto
+
+
+def falha_upstream(e):
+    """Traduz uma falha de saída num status HTTP honesto, sem vazar detalhe interno.
+
+    Nunca devolver `str(e)` ao cliente: a mensagem do `requests` inclui a URL
+    chamada, e a URL leva a chave no query string. Um 401 ou 429 da RAWG viraria
+    uma resposta pública com a chave dentro — justamente o que este proxy existe
+    para evitar.
+
+    Os três status separam de quem é o problema, para o cliente não confundir
+    "a RAWG caiu" com "o proxy está com bug".
+    """
+    app.logger.warning("Falha ao contatar a RAWG: %s", sem_chave(str(e)))
+    # ConnectionError vem antes de Timeout de propósito: ConnectTimeout herda dos
+    # dois, e não ter conseguido nem conectar é "indisponível", não "demorou".
+    if isinstance(e, requests.exceptions.ConnectionError):
+        return jsonify({"error": "Não foi possível alcançar a RAWG. O serviço pode estar fora do ar."}), 503
+    if isinstance(e, requests.exceptions.Timeout):
+        return jsonify({"error": "A RAWG demorou demais para responder."}), 504
+    return jsonify({"error": "A RAWG respondeu com erro."}), 502
 
 
 def year_of(released):
@@ -54,13 +86,13 @@ def search_games(query):
             "key": RAWG_API_KEY,
             "search": query,
             "page_size": MAX_RESULTS,
-        }, timeout=10)
+        }, timeout=UPSTREAM_TIMEOUT)
         resp.raise_for_status()
         results = resp.json().get("results", [])
         results.sort(key=lambda g: g.get("added") or 0, reverse=True)
         return jsonify({"results": [serialize(g) for g in results]})
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": "Erro ao contatar a API da RAWG.", "details": str(e)}), 500
+        return falha_upstream(e)
 
 
 @app.route('/rawg/game/<id_or_slug>', methods=['GET'])
@@ -72,13 +104,14 @@ def game_by_id(id_or_slug):
     if key_missing():
         return jsonify({"error": "A chave da API da RAWG não foi configurada no servidor."}), 500
     try:
-        resp = requests.get(f"{RAWG_BASE}/{id_or_slug}", params={"key": RAWG_API_KEY}, timeout=10)
+        resp = requests.get(f"{RAWG_BASE}/{id_or_slug}", params={"key": RAWG_API_KEY},
+                            timeout=UPSTREAM_TIMEOUT)
         if resp.status_code == 404:
             return jsonify({"error": f"Jogo '{id_or_slug}' não encontrado."}), 404
         resp.raise_for_status()
         return jsonify(serialize(resp.json()))
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": "Erro ao contatar a API da RAWG.", "details": str(e)}), 500
+        return falha_upstream(e)
 
 
 # Este bloco só é executado se você rodar "python api_rawg.py" diretamente
