@@ -129,6 +129,29 @@
         return `${horas}h ${mins}m`;
       };
 
+      // Selo de donos (#20): quem, dentro do vínculo familiar, tem este jogo.
+      // `donos` traz uma entrada por POSSE, e as minhas duas plataformas do
+      // mesmo jogo são duas posses de uma pessoa só — por isso agrupa por
+      // usuario_id antes de decidir se há mais de um dono. Só aparece quando
+      // são 2+ pessoas; jogo 100% do familiar continua no "de {username}"
+      // antigo, que é mais curto e já dizia o necessário.
+      // O catálogo (GET /jogos) não devolve `donos`, daí o || [].
+      const donosPorPessoa = (jogo.donos || []).reduce((acc, d) => {
+        const pessoa = acc.find((p) => p.usuario_id === d.usuario_id);
+        if (pessoa) {
+          if (!pessoa.plataformas.includes(d.plataforma_nome)) pessoa.plataformas.push(d.plataforma_nome);
+        } else {
+          acc.push({ usuario_id: d.usuario_id, username: d.username, plataformas: [d.plataforma_nome] });
+        }
+        return acc;
+      }, []);
+      // Mostra a plataforma de cada um só quando elas divergem — se todo mundo
+      // tem na mesma, repetir o nome dela em cada dono é ruído.
+      const plataformasDivergem = new Set((jogo.donos || []).map((d) => d.plataforma_nome)).size > 1;
+      const seloDonos = donosPorPessoa.length > 1
+        ? donosPorPessoa.map((p) => (plataformasDivergem ? `${p.username} (${p.plataformas.join(', ')})` : p.username)).join(' + ')
+        : null;
+
       return (
         <div className="bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col justify-between transform hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 group h-full border border-gray-700">
           <div className="relative overflow-hidden aspect-[3/4]">
@@ -151,12 +174,18 @@
                 quebrar a edição canônica (GameFormModal) até o cleanup da 2f. */}
             <p className="text-[10px] sm:text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2 sm:mb-3">{jogo.plataforma_nome || jogo.plataforma}</p>
             {/* Selo de origem — só a index (Fase 3 do #1) mostra de qual
-                familiar veio o jogo; o perfil esconde isso de propósito. */}
-            {jogo.origem_username && (
+                familiar veio o jogo; o perfil esconde isso de propósito.
+                Com a #20, quando mais de uma pessoa tem o jogo o selo passa a
+                listar todas em vez de dizer só de quem veio. */}
+            {seloDonos ? (
+              <p className="text-[10px] sm:text-xs text-purple-400 -mt-2 mb-2 sm:-mt-3 sm:mb-3 truncate" title={`Quem tem este jogo: ${seloDonos}`}>
+                {seloDonos}
+              </p>
+            ) : jogo.origem_username ? (
               <p className="text-[10px] sm:text-xs text-purple-400 -mt-2 mb-2 sm:-mt-3 sm:mb-3 truncate" title={`Biblioteca de ${jogo.origem_username}`}>
                 de {jogo.origem_username}
               </p>
-            )}
+            ) : null}
             {jogo.generos && jogo.generos.length > 0 && (
               <div className="genre-list mb-2 sm:mb-4">
                 {jogo.generos.slice(0, 2).map(genero => <span key={genero} className="genre-tag">{genero}</span>)}
@@ -987,7 +1016,13 @@
       // já tem .id/.plataforma/.generos — filtro é server-side, sem reprocessar aqui).
       const itemsBiblioteca = biblioteca
         .filter(item => !filters.titulo || item.titulo.toLowerCase().includes(filters.titulo.toLowerCase()))
-        .filter(item => !filters.plataforma || item.plataforma_nome === filters.plataforma)
+        // Casa se QUALQUER dono tiver a plataforma, não só o card (#20). Se eu
+        // tenho o jogo na Steam e a familiar na GOG, virou um card só (o meu);
+        // filtrar por GOG e não achar esconderia justamente a informação que a
+        // consolidação existe pra mostrar. O selo do card explica a divergência.
+        .filter(item => !filters.plataforma
+          || item.plataforma_nome === filters.plataforma
+          || (item.donos || []).some(d => d.plataforma_nome === filters.plataforma))
         .filter(item => !filters.genero || (item.generos && item.generos.includes(filters.genero)))
         .filter(item => !filters.gameplay_min || item.gameplay_minutos >= filters.gameplay_min * 60)
         .filter(item => !filters.gameplay_max || item.gameplay_minutos <= filters.gameplay_max * 60)
@@ -1002,7 +1037,12 @@
       const cardItems = modo === 'catalogo' ? catalogo : modo === 'importacao' ? itemsPendentes : itemsBiblioteca;
       const totalItems = modo === 'catalogo' ? totalCatalogo : modo === 'importacao' ? pendentes.length : biblioteca.length;
 
-      const plataformasComJogo = Array.from(new Set(biblioteca.map(item => item.plataforma_nome))).sort();
+      // Achata as plataformas de todos os donos, não só a do card (#20): sem
+      // isso, uma plataforma que só a familiar usa some da lista de filtros e
+      // vira inalcançável, mesmo com o jogo dela aparecendo na tela.
+      const plataformasComJogo = Array.from(new Set(
+        biblioteca.flatMap(item => [item.plataforma_nome, ...(item.donos || []).map(d => d.plataforma_nome)])
+      )).filter(Boolean).sort();
 
       return (
         <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
