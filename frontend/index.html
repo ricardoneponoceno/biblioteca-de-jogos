@@ -1109,13 +1109,18 @@
 
               {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
+                  {/* A key da biblioteca usa posse_id: "id" aqui é o jogo
+                      canônico, e o mesmo jogo em duas plataformas minhas são
+                      dois cards — com key igual, o React reaproveita o nó
+                      errado ao reordenar/filtrar. No catálogo e nos pendentes
+                      não há posse, e o id já é único. */}
                   {cardItems.length > 0 ? cardItems.map(item =>
                     modo === 'importacao' ? (
                       <div key={item.id} onClick={() => setResolvendoPendente(item)} className="cursor-pointer">
                         <GameCard jogo={item} onEdit={() => {}} onDelete={handleDeleteCard} isAdmin={false} />
                       </div>
                     ) : (
-                      <GameCard key={item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modo === 'catalogo'} readonly={modo !== 'catalogo' && !!item.origem_username} />
+                      <GameCard key={item.posse_id || item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modo === 'catalogo'} readonly={modo !== 'catalogo' && !!item.origem_username} />
                     )
                   ) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{modo === 'catalogo' ? 'Nenhum jogo encontrado no catálogo.' : modo === 'importacao' ? 'Nada pendente — clique em "Importar da Steam" pra sincronizar.' : (biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.')}</p></div>}
                 </div>
@@ -1557,9 +1562,12 @@
             </div>
           </div>
 
+          {/* Mesmo problema de key da index, sem posse_id pra usar: a API do
+              perfil não devolve, de propósito, pra não revelar de quem é cada
+              posse. Aqui o par jogo + plataforma é o que identifica o card. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
             {itens.length > 0
-              ? itens.map((item) => <GameCard key={item.id} jogo={item} readonly={true} />)
+              ? itens.map((item) => <GameCard key={`${item.id}-${item.plataforma_id}`} jogo={item} readonly={true} />)
               : <div className="col-span-full text-center text-gray-500 mt-10">Nenhum jogo encontrado.</div>}
           </div>
         </div>
