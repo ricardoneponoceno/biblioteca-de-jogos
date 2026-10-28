@@ -94,3 +94,110 @@ test('GET /biblioteca: vínculo familiar pendente (ainda não aceito) não traz 
   const lista = await res.json();
   assert.ok(!lista.some((j) => j.titulo === 'Jogo Pendente 5'));
 });
+
+// --- #20: consolidar jogo repetido entre quem tem vínculo familiar ---
+//
+// A regra: um jogo aparece uma vez por plataforma que EU possuo; se eu não
+// tenho nenhuma posse dele, aparece uma vez só. Todo card carrega `donos` com
+// todas as posses daquele jogo entre os membros efetivos.
+
+test('GET /biblioteca: mesmo jogo em plataformas DIFERENTES por pessoa vira um card só (era o buraco da #20)', async () => {
+  const eu = await app.criarUsuario('bib20a');
+  const familiar = await app.criarUsuario('bib20a-familiar');
+  const steam = await app.criarPlataforma('Steam-bib-20a');
+  const gog = await app.criarPlataforma('GOG-bib-20a');
+  const jogo = await app.criarJogo('Jogo Nas Duas Lojas 20a');
+  const minhaPosse = await app.criarPosse(eu.id, jogo, steam);
+  await app.criarPosse(familiar.id, jogo, gog);
+  await app.criarVinculoAceito(eu.id, familiar.id, 'familiar');
+
+  const lista = await (await get('/biblioteca', { token: eu.token })).json();
+
+  // Antes da #20 isso devolvia 2 cards, sem nenhum sinal de ser o mesmo jogo.
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].posse_id, minhaPosse.id, 'o card tem que ser a MINHA posse, pra continuar editável');
+  assert.equal(lista[0].plataforma_nome, 'Steam-bib-20a');
+
+  const donos = lista[0].donos;
+  assert.equal(donos.length, 2);
+  assert.deepEqual(
+    donos.map((d) => d.plataforma_nome).sort(),
+    ['GOG-bib-20a', 'Steam-bib-20a'],
+    'o selo precisa das duas plataformas, não só da minha'
+  );
+  assert.equal(donos[0].usuario_id, eu.id, 'eu venho primeiro no array');
+});
+
+test('GET /biblioteca: as MINHAS duas plataformas continuam dois cards, cada um com sua posse', async () => {
+  const eu = await app.criarUsuario('bib20b');
+  const steam = await app.criarPlataforma('Steam-bib-20b');
+  const gog = await app.criarPlataforma('GOG-bib-20b');
+  const jogo = await app.criarJogo('Jogo Meu Em Duas 20b');
+  const posseSteam = await app.criarPosse(eu.id, jogo, steam);
+  const posseGog = await app.criarPosse(eu.id, jogo, gog);
+
+  const lista = await (await get('/biblioteca', { token: eu.token })).json();
+
+  // Consolidar por jogo_id puro juntaria as duas e o botão de excluir não
+  // saberia qual posse remover. Duas posses minhas = dois cards.
+  assert.equal(lista.length, 2);
+  assert.deepEqual(lista.map((j) => j.posse_id).sort(), [posseSteam.id, posseGog.id].sort());
+
+  // Sutileza que o filtro da #21 depende: são 2 posses, mas UMA pessoa só —
+  // isso não é "duplicado na família".
+  for (const card of lista) {
+    assert.equal(card.donos.length, 2, 'as duas posses aparecem em donos');
+    assert.equal(new Set(card.donos.map((d) => d.usuario_id)).size, 1, 'mas é uma pessoa só');
+  }
+});
+
+test('GET /biblioteca: jogo que só o familiar tem, em duas plataformas, aparece uma vez só', async () => {
+  const eu = await app.criarUsuario('bib20c');
+  const familiar = await app.criarUsuario('bib20c-familiar');
+  const steam = await app.criarPlataforma('Steam-bib-20c');
+  const gog = await app.criarPlataforma('GOG-bib-20c');
+  const jogo = await app.criarJogo('Jogo Só Dele Em Duas 20c');
+  await app.criarPosse(familiar.id, jogo, steam);
+  await app.criarPosse(familiar.id, jogo, gog);
+  await app.criarVinculoAceito(eu.id, familiar.id, 'familiar');
+
+  const lista = await (await get('/biblioteca', { token: eu.token })).json();
+
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].origem_username, 'bib20c-familiar', 'não é meu, então continua marcado como dele');
+  assert.equal(lista[0].donos.length, 2);
+  assert.equal(new Set(lista[0].donos.map((d) => d.usuario_id)).size, 1);
+});
+
+test('GET /biblioteca: jogo só meu traz donos com um item só (sem selo)', async () => {
+  const eu = await app.criarUsuario('bib20d');
+  const steam = await app.criarPlataforma('Steam-bib-20d');
+  const jogo = await app.criarJogo('Jogo Só Meu 20d');
+  const posse = await app.criarPosse(eu.id, jogo, steam);
+
+  const lista = await (await get('/biblioteca', { token: eu.token })).json();
+
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].donos.length, 1);
+  assert.equal(lista[0].donos[0].usuario_id, eu.id);
+  assert.equal(lista[0].donos[0].posse_id, posse.id);
+});
+
+test('GET /biblioteca: donos não vaza posse de quem não é membro efetivo', async () => {
+  const eu = await app.criarUsuario('bib20e');
+  const estranho = await app.criarUsuario('bib20e-estranho');
+  const amigo = await app.criarUsuario('bib20e-amigo');
+  const steam = await app.criarPlataforma('Steam-bib-20e');
+  const jogo = await app.criarJogo('Jogo Que Muita Gente Tem 20e');
+  await app.criarPosse(eu.id, jogo, steam);
+  await app.criarPosse(estranho.id, jogo, steam);
+  await app.criarPosse(amigo.id, jogo, steam);
+  // Amizade NÃO conta pra biblioteca efetiva — só vínculo familiar.
+  await app.criarVinculoAceito(eu.id, amigo.id, 'amizade');
+
+  const lista = await (await get('/biblioteca', { token: eu.token })).json();
+
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].donos.length, 1, 'só eu — nem o estranho nem o amigo entram');
+  assert.equal(lista[0].donos[0].usuario_id, eu.id);
+});

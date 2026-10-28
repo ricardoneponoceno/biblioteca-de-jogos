@@ -400,47 +400,98 @@ app.delete('/posses/:id', autenticar, async (req, res) => {
 });
 
 // Consulta central da Fase 2c, estendida na Fase 3 do #1 (fechada depois do
-// #3): além de WHERE p.usuario_id = :eu, agora inclui as posses de quem tem
-// vínculo familiar aceito comigo — biblioteca efetiva, mesmo padrão do #3
+// #3): além de WHERE p.usuario_id = :eu, inclui as posses de quem tem vínculo
+// familiar aceito comigo — biblioteca efetiva, mesmo padrão do #3
 // (membrosEfetivaSql, abaixo). Diferente do perfil, aqui a origem DEVE
 // aparecer (origem_username) — é a minha própria tela, faz sentido saber de
-// quem veio cada jogo emprestado. Quando eu e o familiar temos o mesmo
-// jogo+plataforma, prefere a MINHA posse (fica editável) — dedup por
-// DISTINCT ON, desempatando por "é minha" antes de "é do familiar".
+// quem veio cada jogo emprestado.
 // GET /jogos permanece intacto, servindo de busca do catálogo pro
 // autocomplete de "adicionar à biblioteca" (Fase 2d).
+//
+// A #20 mudou o que conta como um card. Antes era DISTINCT ON (jogo_id,
+// plataforma_id), o que só colapsava o caso estreito de eu e o familiar
+// termos o mesmo jogo na MESMA plataforma; em plataformas diferentes saíam
+// dois cards sem nenhuma indicação de que era o mesmo jogo. A regra agora:
+//
+//   um jogo aparece uma vez por plataforma que EU possuo; se eu não tenho
+//   nenhuma posse dele, aparece uma vez só.
+//
+// Consolidar por jogo_id puro (como o desenho original previa) juntaria
+// também as MINHAS duas posses do mesmo jogo em plataformas diferentes — e
+// aí o botão de excluir do card não teria como saber qual das duas remover.
+// Mantendo a granularidade por plataforma do lado de cá, todo card meu é uma
+// posse minha específica e `posse_id` continua não-ambíguo.
+//
+// Independente de quantos cards um jogo gere, cada um carrega `donos` com
+// TODAS as posses daquele jogo entre os membros efetivos — é o que alimenta o
+// selo "Ricardo + Larissa" e, na #21, o filtro de duplicados. Note que ter
+// mais de um dono não é o mesmo que ter mais de uma posse: minhas duas
+// plataformas são duas posses de uma pessoa só. Quem for decidir "isso está
+// duplicado na família" precisa contar usuario_id distintos, não o tamanho
+// do array.
 app.get('/biblioteca', autenticar, async (req, res) => {
   try {
     const result = await db.query(
       `WITH membros AS (${membrosEfetivaSql(1)}),
-            candidatos AS (
-              SELECT DISTINCT ON (p.jogo_id, p.plataforma_id)
+            posses_efetivas AS (
+              SELECT
                 p.id AS posse_id,
+                p.usuario_id,
+                p.jogo_id,
                 p.data_aquisicao,
                 p.created_at AS posse_created_at,
                 pl.id AS plataforma_id,
                 pl.nome AS plataforma_nome,
-                j.id AS jogo_id,
-                j.titulo,
-                j.lancamento,
-                j.gameplay_minutos,
-                j.metacritic,
-                j.capa,
-                j.plataforma,
-                j.rawg_id,
-                j.hltb_id,
-                CASE WHEN p.usuario_id = $1 THEN NULL ELSE u.username END AS origem_username
+                u.username
               FROM posses p
               JOIN membros m ON m.usuario_id = p.usuario_id
               JOIN usuarios u ON u.id = p.usuario_id
-              JOIN jogos j ON j.id = p.jogo_id
               JOIN plataformas pl ON pl.id = p.plataforma_id
-              ORDER BY p.jogo_id, p.plataforma_id, (p.usuario_id = $1) DESC
+            ),
+            donos_por_jogo AS (
+              SELECT
+                jogo_id,
+                jsonb_agg(jsonb_build_object(
+                  'usuario_id', usuario_id,
+                  'username', username,
+                  'posse_id', posse_id,
+                  'plataforma_nome', plataforma_nome
+                ) ORDER BY (usuario_id = $1) DESC, username, plataforma_nome) AS donos
+              FROM posses_efetivas
+              GROUP BY jogo_id
+            ),
+            cartoes AS (
+              SELECT * FROM posses_efetivas WHERE usuario_id = $1
+              UNION ALL
+              SELECT * FROM (
+                SELECT DISTINCT ON (jogo_id) *
+                FROM posses_efetivas
+                WHERE jogo_id NOT IN (SELECT jogo_id FROM posses_efetivas WHERE usuario_id = $1)
+                ORDER BY jogo_id, username, plataforma_nome
+              ) so_do_familiar
             )
-       SELECT c.*,
-         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = c.jogo_id) AS generos
-       FROM candidatos c
-       ORDER BY c.titulo ASC`,
+       SELECT
+         c.posse_id,
+         c.data_aquisicao,
+         c.posse_created_at,
+         c.plataforma_id,
+         c.plataforma_nome,
+         j.id AS jogo_id,
+         j.titulo,
+         j.lancamento,
+         j.gameplay_minutos,
+         j.metacritic,
+         j.capa,
+         j.plataforma,
+         j.rawg_id,
+         j.hltb_id,
+         CASE WHEN c.usuario_id = $1 THEN NULL ELSE c.username END AS origem_username,
+         d.donos,
+         (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
+       FROM cartoes c
+       JOIN jogos j ON j.id = c.jogo_id
+       JOIN donos_por_jogo d ON d.jogo_id = c.jogo_id
+       ORDER BY j.titulo ASC`,
       [req.usuario.id]
     );
     res.status(200).json(result.rows);
