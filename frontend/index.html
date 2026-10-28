@@ -121,6 +121,12 @@
     // readonly esconde editar/excluir por completo — usado no perfil de outra
     // pessoa (Fase 3c da #3), onde a lista nem tem posse_id/jogo canônico
     // editável associado (a API do perfil não devolve isso de propósito).
+    // Quantas PESSOAS distintas têm este jogo (#20/#21). `donos` traz uma
+    // entrada por posse, então minhas duas plataformas do mesmo jogo contam
+    // como um dono só — é essa contagem, e não o tamanho do array, que define
+    // "duplicado na família".
+    const contaDonos = (jogo) => new Set((jogo.donos || []).map(d => d.usuario_id)).size;
+
     function GameCard({ jogo, onEdit, onDelete, isAdmin, readonly }) {
       const formatarGameplay = (minutos) => {
         if (!minutos) return 'N/A';
@@ -857,7 +863,10 @@
       });
       const [usuarioUsername, setUsuarioUsername] = useState(() => localStorage.getItem('gameLibUsername'));
       const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
+      // so_duplicados guarda '' ou '1', e não booleano, pra não quebrar o
+      // "Exibindo X de Y" — ele decide se há filtro ativo testando os valores
+      // contra '', e um false contaria como filtro sempre ligado.
+      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '', so_duplicados: '' });
 
       const handleAuthSuccess = () => {
         const payload = decodeJwt(localStorage.getItem('gameLibToken'));
@@ -1028,6 +1037,10 @@
         .filter(item => !filters.gameplay_max || item.gameplay_minutos <= filters.gameplay_max * 60)
         .filter(item => !filters.metacritic_min || item.metacritic >= filters.metacritic_min)
         .filter(item => !filters.metacritic_max || item.metacritic <= filters.metacritic_max)
+        // "Duplicado" (#21) é mais de uma PESSOA ter o jogo — não mais de uma
+        // posse. Minhas duas plataformas do mesmo jogo são duas posses de um
+        // dono só, e contar o array cru marcaria isso como duplicado.
+        .filter(item => !filters.so_duplicados || contaDonos(item) > 1)
         .map(item => ({ ...item, id: item.jogo_id }));
 
       // Pendentes só filtram por título (client-side) — não têm gênero/gameplay/
@@ -1043,6 +1056,12 @@
       const plataformasComJogo = Array.from(new Set(
         biblioteca.flatMap(item => [item.plataforma_nome, ...(item.donos || []).map(d => d.plataforma_nome)])
       )).filter(Boolean).sort();
+
+      // Esconde o botão de "só duplicados" (#21) pra quem não tem vínculo
+      // familiar nenhum: sem isso o filtro existe mas nunca devolve nada, o
+      // que parece defeito. Olha a biblioteca inteira, não a já filtrada,
+      // senão o botão some quando o próprio filtro esvazia a lista.
+      const temDuplicados = biblioteca.some(item => contaDonos(item) > 1);
 
       return (
         <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-[300px]">
@@ -1103,6 +1122,22 @@
                       <input name="metacritic_min" type="number" value={filters.metacritic_min} onChange={handleFilterChange} placeholder="Meta Min" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
                       <input name="metacritic_max" type="number" value={filters.metacritic_max} onChange={handleFilterChange} placeholder="Meta Máx" className="w-full p-2.5 bg-gray-900 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500" />
                     </div>
+                    {/* Filtro de duplicados (#21) — só faz sentido quando há
+                        com quem duplicar, então some se não houver ninguém de
+                        vínculo familiar na lista. Guarda string, não booleano:
+                        o contador "Exibindo X de Y" testa os filtros contra ''
+                        e um false entraria como se sempre houvesse filtro. */}
+                    {modo === 'biblioteca' && temDuplicados && (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(p => ({ ...p, so_duplicados: p.so_duplicados ? '' : '1' }))}
+                        aria-pressed={!!filters.so_duplicados}
+                        title="Mostrar só os jogos que mais de uma pessoa da família tem"
+                        className={`p-2.5 rounded-lg border font-semibold transition-colors ${filters.so_duplicados ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-900 border-gray-600 text-gray-300 hover:border-purple-500'}`}
+                      >
+                        Só duplicados
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
