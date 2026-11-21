@@ -31,7 +31,7 @@ async function seedVinculos() {
   const res = await db.query(
     `INSERT INTO vinculos (solicitante_id, destinatario_id, tipo, status, resolved_at)
      VALUES ($1, $2, 'amizade', 'aceito', now())
-     ON CONFLICT (solicitante_id, destinatario_id, tipo) DO NOTHING`,
+     ON CONFLICT (par_menor_id, par_maior_id, tipo) DO NOTHING`,
     [marceloId, parceiroId]
   );
   console.log(

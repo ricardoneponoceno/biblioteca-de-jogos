@@ -1,6 +1,5 @@
 // Script para importar dados de um arquivo CSV para o banco de dados PostgreSQL
 
-require('dotenv').config({ path: './.env.local' });
 const fs = require('fs');
 const { parse } = require('csv-parse');
 const db = require('./db'); // Reutiliza nossa conexão com o banco
