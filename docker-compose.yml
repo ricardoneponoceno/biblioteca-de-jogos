@@ -1,3 +1,8 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
@@ -5,7 +10,7 @@ services:
     container_name: gamelib-db
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
@@ -14,6 +19,17 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - gamelib-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d gamelib_db"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   backend:
     build:
@@ -26,11 +42,23 @@ services:
     environment:
       - DB_HOST=db
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     networks:
       - gamelib-network
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 160M
 
   frontend:
     build:
@@ -39,11 +67,23 @@ services:
     container_name: gamelib-frontend
     restart: unless-stopped
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - gamelib-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   # Novo serviço para a API HLTB
   api-hltb:
@@ -55,9 +95,20 @@ services:
     env_file:
       - ./api-hltb/.env # CORS_ORIGIN — sem isso, cai no default do api.py (CORS desativado)
     ports:
-      - "3002:8000" # Mapeia a porta 3002 do seu PC para a 8000 do contentor
+      - "127.0.0.1:3002:8000" # Mapeia a porta 3002 do seu PC para a 8000 do contentor
     networks:
       - gamelib-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8000'"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   # Novo serviço para a API RAWG
   api-rawg:
@@ -69,9 +120,20 @@ services:
     env_file:
       - ./api-rawg/.env # Carrega a chave de API e o CORS_ORIGIN do ficheiro .env
     ports:
-      - "3003:8000" # Mapeia a porta 3003 do seu PC para a 8000 do contentor
+      - "127.0.0.1:3003:8000" # Mapeia a porta 3003 do seu PC para a 8000 do contentor
     networks:
       - gamelib-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8000'"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   townsquare:
     build:
@@ -83,9 +145,20 @@ services:
       - ALLOWED_ORIGINS=http://localhost:8081,http://192.168.18.183:8081
       - AUTO_REGISTER=true
     ports:
-      - "3004:8787"
+      - "127.0.0.1:3004:8787"
     networks:
       - gamelib-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8787"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
 networks:
   gamelib-network:

@@ -109,7 +109,7 @@ async function apenasAdmin(req, res, next) {
 }
 
 app.post('/registro', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password } = req.body || {};
   // typeof antes de qualquer uso: um array (ex: password: ["a","b","c","d","e","f"])
   // tem .length e passaria na checagem de tamanho, quebrando só lá no bcrypt.
   if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
@@ -136,7 +136,7 @@ app.post('/registro', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
     return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
   }
@@ -237,7 +237,7 @@ app.get('/jogos', async (req, res) => {
 // Lacuna aceita conscientemente: sem fila de moderação ainda, o cadastro fica
 // visível a todo mundo sem revisão — ok pros 3 usuários conhecidos hoje.
 app.post('/jogos', autenticar, async (req, res) => {
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body || {};
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
@@ -276,7 +276,7 @@ app.post('/jogos', autenticar, async (req, res) => {
 
 app.put('/jogos/:id', autenticar, apenasAdmin, async (req, res) => {
   const { id } = req.params;
-  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body;
+  const { titulo, plataforma, lancamento, gameplay_minutos, metacritic, capa, generos, rawg_id, hltb_id } = req.body || {};
   if (!lancamento || lancamento === '') {
     return res.status(400).json({ error: "O campo 'Data de Lançamento' é obrigatório." });
   }
@@ -357,7 +357,7 @@ app.get('/plataformas', async (req, res) => {
 
 // Sem apenasAdmin: gerir a própria biblioteca é ação de qualquer usuário logado.
 app.post('/posses', autenticar, async (req, res) => {
-  const { jogo_id, plataforma_id, data_aquisicao } = req.body;
+  const { jogo_id, plataforma_id, data_aquisicao } = req.body || {};
   if (!jogo_id || !plataforma_id) {
     return res.status(400).json({ error: 'jogo_id e plataforma_id são obrigatórios.' });
   }
@@ -511,7 +511,7 @@ app.get('/biblioteca', autenticar, async (req, res) => {
 const TIPOS_VINCULO = ['amizade', 'familiar'];
 
 app.post('/vinculos', autenticar, async (req, res) => {
-  const { destinatario_id, tipo } = req.body;
+  const { destinatario_id, tipo } = req.body || {};
   if (!destinatario_id || !TIPOS_VINCULO.includes(tipo)) {
     return res.status(400).json({ error: 'destinatario_id e tipo (amizade|familiar) são obrigatórios.' });
   }
@@ -588,7 +588,7 @@ app.post('/vinculos', autenticar, async (req, res) => {
 // aceito/recusado, de propósito, pra não multiplicar estado sem necessidade).
 app.patch('/vinculos/:id', autenticar, async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status } = req.body || {};
   if (!['aceito', 'recusado'].includes(status)) {
     return res.status(400).json({ error: "status deve ser 'aceito' ou 'recusado'." });
   }
@@ -832,7 +832,7 @@ app.get('/usuarios/:username/biblioteca', autenticar, async (req, res) => {
 // vincular de novo com um id diferente corrige, sem precisar de endpoint de
 // editar separado.
 app.post('/contas-plataforma', autenticar, async (req, res) => {
-  const { plataforma_id, identificador_externo } = req.body;
+  const { plataforma_id, identificador_externo } = req.body || {};
   if (!plataforma_id || typeof identificador_externo !== 'string' || !identificador_externo.trim()) {
     return res.status(400).json({ error: 'plataforma_id e identificador_externo são obrigatórios.' });
   }
@@ -967,7 +967,7 @@ app.get('/importacoes-pendentes', autenticar, async (req, res) => {
 // e plataforma_id (que a importação já sabia, não precisa perguntar de novo).
 app.patch('/importacoes-pendentes/:id', autenticar, async (req, res) => {
   const { id } = req.params;
-  const { jogo_id } = req.body;
+  const { jogo_id } = req.body || {};
   if (!jogo_id) {
     return res.status(400).json({ error: 'jogo_id é obrigatório.' });
   }
