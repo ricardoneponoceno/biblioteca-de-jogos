@@ -747,6 +747,53 @@ app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
   }
 });
 
+// Lista os vínculos aceitos (amigos e família) de um perfil público para o
+// modal ao clicar nos contadores do cabeçalho (#32). Devolve apenas username
+// e total_jogos (posses próprias de cada usuário, mesma métrica de
+// contadores.jogos do cabeçalho), ordenados por username ASC.
+app.get('/usuarios/:username/vinculos', autenticar, async (req, res) => {
+  const { username } = req.params;
+  try {
+    const usuarioResult = await db.query('SELECT id FROM usuarios WHERE username = $1', [username]);
+    if (usuarioResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    const donoId = usuarioResult.rows[0].id;
+
+    const result = await db.query(
+      `SELECT
+         v.tipo,
+         u.username,
+         (SELECT count(*)::int FROM posses p WHERE p.usuario_id = u.id) AS total_jogos
+       FROM vinculos v
+       JOIN usuarios u ON u.id = CASE
+         WHEN v.solicitante_id = $1 THEN v.destinatario_id
+         ELSE v.solicitante_id
+       END
+       WHERE v.status = 'aceito'
+         AND (v.solicitante_id = $1 OR v.destinatario_id = $1)
+       ORDER BY u.username ASC`,
+      [donoId]
+    );
+
+    const amigos = [];
+    const familia = [];
+    for (const row of result.rows) {
+      const item = { username: row.username, total_jogos: row.total_jogos };
+      if (row.tipo === 'amizade') {
+        amigos.push(item);
+      } else if (row.tipo === 'familiar') {
+        familia.push(item);
+      }
+    }
+
+    res.status(200).json({ amigos, familia });
+  } catch (err) {
+    console.error('Erro ao buscar vínculos do perfil:', err);
+    res.status(500).json({ error: 'Erro ao buscar os vínculos do perfil.' });
+  }
+});
+
 // "Membros" cuja posse conta pra biblioteca efetiva do usuário no parâmetro
 // $N: a própria pessoa, mais quem tem vínculo familiar aceito com ela
 // (simétrico — não importa quem foi o solicitante do convite). Parametrizado

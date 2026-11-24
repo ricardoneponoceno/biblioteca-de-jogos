@@ -186,3 +186,60 @@ test('perfil reflete amizade aceita e vínculo familiar aceito, independentes', 
   assert.equal(body.vinculo_amizade.status, 'aceito');
   assert.equal(body.vinculo_familiar, null);
 });
+
+// --- Issue #32: GET /usuarios/:username/vinculos ---
+
+test('GET /usuarios/:username/vinculos sem token -> 401', async () => {
+  const res = await get('/usuarios/ninguem/vinculos');
+  assert.equal(res.status, 401);
+});
+
+test('GET /usuarios/:username/vinculos de username inexistente -> 404', async () => {
+  const eu = await app.criarUsuario('eu12');
+  const res = await get('/usuarios/nao-existe/vinculos', { token: eu.token });
+  assert.equal(res.status, 404);
+});
+
+test('GET /usuarios/:username/vinculos lista apenas vínculos aceitos com total_jogos próprios e ordenados por username', async () => {
+  const eu = await app.criarUsuario('eu13');
+  const dono = await app.criarUsuario('dono13');
+  const amigoZ = await app.criarUsuario('z_amigo13');
+  const amigoA = await app.criarUsuario('a_amigo13');
+  const familiarB = await app.criarUsuario('b_familiar13');
+  const pendente = await app.criarUsuario('pendente13');
+
+  const steam = await app.criarPlataforma('Steam-perfil-13');
+  const j1 = await app.criarJogo('Jogo 1-13');
+  const j2 = await app.criarJogo('Jogo 2-13');
+  const j3 = await app.criarJogo('Jogo 3-13');
+
+  // a_amigo13 tem 2 posses próprias; z_amigo13 tem 0; b_familiar13 tem 1
+  await app.criarPosse(amigoA.id, j1, steam);
+  await app.criarPosse(amigoA.id, j2, steam);
+  await app.criarPosse(familiarB.id, j3, steam);
+  // dono também tem 1 posse (não deve contaminar o total_jogos do familiarB)
+  await app.criarPosse(dono.id, j1, steam);
+
+  // Vínculos aceitos nos dois sentidos (dono como solicitante e como destinatário)
+  await app.criarVinculoAceito(dono.id, amigoZ.id, 'amizade');
+  await app.criarVinculoAceito(amigoA.id, dono.id, 'amizade');
+  await app.criarVinculoAceito(familiarB.id, dono.id, 'familiar');
+
+  // Vínculo pendente não deve entrar na listagem
+  await post('/vinculos', { token: pendente.token, body: { destinatario_id: dono.id, tipo: 'amizade' } });
+
+  const res = await get(`/usuarios/${dono.username}/vinculos`, { token: eu.token });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+
+  assert.deepEqual(body, {
+    amigos: [
+      { username: 'a_amigo13', total_jogos: 2 },
+      { username: 'z_amigo13', total_jogos: 0 },
+    ],
+    familia: [
+      { username: 'b_familiar13', total_jogos: 1 },
+    ],
+  });
+});
+
