@@ -51,6 +51,7 @@ app.get('/config', (req, res) => {
   res.json({
     hltbApiUrl: process.env.HLTB_API_URL,
     rawgApiUrl: process.env.RAWG_API_URL,
+    steamImportEnabled: Boolean(process.env.STEAM_API_KEY),
   });
 });
 
@@ -854,8 +855,6 @@ app.post('/contas-plataforma', autenticar, async (req, res) => {
   }
 });
 
-const STEAM_API_KEY = process.env.STEAM_API_KEY;
-
 // Só uma importação em andamento por usuário — a rotina limpa e repopula
 // importacoes_pendentes, não é seguro duas chamadas concorrentes fazendo isso
 // ao mesmo tempo (dois cliques, duas abas). Trava em memória (não em
@@ -872,7 +871,8 @@ const importacoesEmAndamento = new Set();
 // pendente já tenha sido limpo) → pula; senão já existe pendente com esse
 // título (ainda esperando revisão) → pula; senão insere.
 app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
-  if (!STEAM_API_KEY) {
+  const steamApiKey = process.env.STEAM_API_KEY;
+  if (!steamApiKey) {
     return res.status(500).json({ error: 'Importador da Steam não configurado (falta STEAM_API_KEY).' });
   }
   if (importacoesEmAndamento.has(req.usuario.id)) {
@@ -892,7 +892,7 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
       return res.status(400).json({ error: 'Vincule sua conta Steam antes de importar.' });
     }
 
-    const url = `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${STEAM_API_KEY}&steamid=${conta.identificador_externo}&format=json&include_appinfo=1`;
+    const url = `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${steamApiKey}&steamid=${conta.identificador_externo}&format=json&include_appinfo=1`;
     const steamRes = await fetch(url);
     const steamData = await steamRes.json();
     const jogosSteam = steamData && steamData.response && steamData.response.games;
@@ -910,24 +910,35 @@ app.post('/contas-plataforma/steam/importar', autenticar, async (req, res) => {
     // uma falha na chamada não apaga pendentes válidos à toa.
     await db.query('DELETE FROM importacoes_pendentes WHERE usuario_id = $1', [req.usuario.id]);
 
-    let novosPendentes = 0;
+    const possesExistentesResult = await db.query(
+      'SELECT identificador_externo FROM posses WHERE usuario_id = $1 AND plataforma_id = $2 AND identificador_externo IS NOT NULL',
+      [req.usuario.id, conta.plataforma_id]
+    );
+    const appIdsComPosse = new Set(possesExistentesResult.rows.map((r) => String(r.identificador_externo)));
+
+    const appIdsParaInserir = [];
+    const titulosParaInserir = [];
+    const capasParaInserir = [];
+
     for (const jogo of jogosSteam) {
       const appid = String(jogo.appid);
+      if (appIdsComPosse.has(appid)) continue;
 
-      const jaTemPosse = await db.query(
-        'SELECT 1 FROM posses WHERE usuario_id = $1 AND plataforma_id = $2 AND identificador_externo = $3',
-        [req.usuario.id, conta.plataforma_id, appid]
-      );
-      if (jaTemPosse.rows.length > 0) continue;
+      appIdsParaInserir.push(appid);
+      titulosParaInserir.push(jogo.name);
+      capasParaInserir.push(`https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`);
+    }
 
-      const capa = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
+    let novosPendentes = 0;
+    if (appIdsParaInserir.length > 0) {
       const insertResult = await db.query(
         `INSERT INTO importacoes_pendentes (usuario_id, plataforma_id, identificador_externo, titulo, capa)
-         VALUES ($1, $2, $3, $4, $5)
+         SELECT $1, $2, u.identificador_externo, u.titulo, u.capa
+         FROM UNNEST($3::varchar[], $4::varchar[], $5::text[]) AS u(identificador_externo, titulo, capa)
          ON CONFLICT (usuario_id, plataforma_id, titulo) DO NOTHING`,
-        [req.usuario.id, conta.plataforma_id, appid, jogo.name, capa]
+        [req.usuario.id, conta.plataforma_id, appIdsParaInserir, titulosParaInserir, capasParaInserir]
       );
-      novosPendentes += insertResult.rowCount;
+      novosPendentes = insertResult.rowCount;
     }
 
     await db.query(

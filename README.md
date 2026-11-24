@@ -99,8 +99,12 @@ Gerar sua chave da **API** do **RAWG** em: https://rawg.io/apidocs
    DB_PASSWORD=admin
    DB_HOST=db
    DB_PORT=5432
-   DB_NAME=gamelib_db
+   DB_DATABASE=gamelib_db
    CORS_ORIGIN=http://localhost:8081
+   HLTB_API_URL=http://localhost:3002/howlongtobeat
+   RAWG_API_URL=http://localhost:3003/rawg
+   JWT_SECRET=troque_por_um_segredo_longo_e_aleatorio
+   STEAM_API_KEY=
    ```
    Acesse a pasta `api-rawg` e configure a sua chave da API do RAWG e o CORS no arquivo `.env`:
    ```env

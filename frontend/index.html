@@ -1084,8 +1084,8 @@
               )}
               {modo === 'biblioteca' && isAdmin && <button onClick={() => irParaModo('catalogo')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Ver catálogo completo</button>}
               {modo === 'biblioteca' && usuarioUsername && <button onClick={() => { setJogoParaPosseInicial(null); setIsAddModalOpen(true); }} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex-shrink-0">Adicionar à minha biblioteca</button>}
-              {modo === 'biblioteca' && usuarioUsername && <button onClick={() => setIsImportarSteamOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Importar da Steam</button>}
-              {modo === 'biblioteca' && usuarioUsername && <button onClick={() => irParaModo('importacao')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Ver pendentes de importação</button>}
+              {modo === 'biblioteca' && usuarioUsername && apiConfig.steamImportEnabled && <button onClick={() => setIsImportarSteamOpen(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Importar da Steam</button>}
+              {modo === 'biblioteca' && usuarioUsername && apiConfig.steamImportEnabled && <button onClick={() => irParaModo('importacao')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Ver pendentes de importação</button>}
               {modo !== 'biblioteca' && <button onClick={() => irParaModo('biblioteca')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">Voltar pra minha biblioteca</button>}
               {/* Sanduíche à direita de tudo — abre o menuzinho de conta
                   (avatar + username + sair). "Adicionar" fica à esquerda dele

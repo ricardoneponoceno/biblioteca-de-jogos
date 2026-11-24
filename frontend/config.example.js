@@ -16,6 +16,6 @@ API_BASE_URL = 'http://SEU_IP_AQUI:3000';
 */
 
 /*
-// --- Ambiente de Produção (Vercel/Render) ---
-API_BASE_URL = 'https://URL_DO_SEU_BACKEND.onrender.com';
+// --- Ambiente de Produção ---
+API_BASE_URL = 'https://api.laricks.com.br';
 */
