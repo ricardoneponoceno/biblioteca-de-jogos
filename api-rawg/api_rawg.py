@@ -93,6 +93,47 @@ def year_of(released):
     return int(released[:4]) if released else None
 
 
+# Mapeamento 1:1 dos slugs/nomes de gêneros da RAWG para os nomes canônicos em
+# português na tabela `generos`. Gêneros ambíguos ("shooter" -> FPS vs TPS) ou
+# sem equivalente no catálogo ("family", "educational") ficam de fora para
+# escolha manual no formulário (Issue #13).
+RAWG_GENRE_MAP = {
+    "action": "Ação",
+    "indie": "Indie",
+    "adventure": "Aventura",
+    "role-playing-games-rpg": "RPG",
+    "rpg": "RPG",
+    "strategy": "Estratégia",
+    "casual": "Casual",
+    "simulation": "Simulação",
+    "puzzle": "Puzzle",
+    "arcade": "Arcade",
+    "platformer": "Plataforma",
+    "racing": "Corrida",
+    "massively-multiplayer": "MMORPG",
+    "sports": "Esporte",
+    "fighting": "Luta",
+    "board-games": "Tabuleiro",
+    "board games": "Tabuleiro",
+    "card": "Cartas",
+}
+
+
+def map_genres(raw_genres):
+    """Traduz a lista `genres` da RAWG para nomes em pt-BR sem duplicatas."""
+    if not isinstance(raw_genres, list):
+        return []
+    mapped = []
+    for g in raw_genres:
+        if not isinstance(g, dict):
+            continue
+        key = (g.get("slug") or g.get("name") or "").strip().lower()
+        pt_name = RAWG_GENRE_MAP.get(key)
+        if pt_name and pt_name not in mapped:
+            mapped.append(pt_name)
+    return mapped
+
+
 def serialize(game):
     """Converte um jogo da RAWG no formato que o app consome."""
     return {
@@ -104,6 +145,7 @@ def serialize(game):
         "metacritic": game.get("metacritic"),
         "image_url": game.get("background_image"),
         "added": game.get("added"),              # popularidade (nº de coleções)
+        "genres": map_genres(game.get("genres")),
     }
 
 

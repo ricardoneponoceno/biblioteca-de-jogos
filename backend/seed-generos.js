@@ -5,12 +5,13 @@
 const db = require('./db');
 
 const GENEROS = [
-  'Ação', 'Aventura', 'Beat`em up', 'Bullet Hell', 'Co-op', 'Corrida', 'Cozy',
-  'Esporte', 'Estratégia', 'Hack and Slash', 'Luta', 'Metroidvania', 'MMORPG',
-  'MOBA', 'Multiplayer', 'Mundo Aberto', 'Musical', 'Musou', 'Narrativo',
-  'Party Game', 'Plataforma', 'Point and Click', 'Puzzle', 'Roguelike', 'RPG',
-  'RTS', 'Run and Gun', 'Sandbox', 'Shoot em Up', 'Simulação', 'Stealth',
-  'Survival', 'Tático', 'Terror', 'Tiro (FPS)', 'Tiro (TPS)', 'Visual Novel',
+  'Ação', 'Arcade', 'Aventura', 'Beat`em up', 'Bullet Hell', 'Cartas', 'Casual',
+  'Co-op', 'Corrida', 'Cozy', 'Esporte', 'Estratégia', 'Hack and Slash', 'Indie',
+  'Luta', 'Metroidvania', 'MMORPG', 'MOBA', 'Multiplayer', 'Mundo Aberto',
+  'Musical', 'Musou', 'Narrativo', 'Party Game', 'Plataforma', 'Point and Click',
+  'Puzzle', 'Roguelike', 'RPG', 'RTS', 'Run and Gun', 'Sandbox', 'Shoot em Up',
+  'Simulação', 'Stealth', 'Survival', 'Tabuleiro', 'Tático', 'Terror',
+  'Tiro (FPS)', 'Tiro (TPS)', 'Visual Novel',
 ];
 
 async function seedGeneros() {

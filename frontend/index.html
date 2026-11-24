@@ -21,8 +21,8 @@
 
   <!-- Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <!-- Usamos o Babel 6, que NÃO cracha com scripts nativos -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -310,7 +310,7 @@
 
       const selectCandidate = (c) => {
         setSelected(c);
-        if (source === 'rawg') setFields({ titulo: true, lancamento: true, metacritic: true, capa: true });
+        if (source === 'rawg') setFields({ titulo: true, lancamento: true, metacritic: true, capa: true, generos: true });
         else setFields({ titulo: true, gameplay_horas: true, capa: true });
       };
       const toggleField = (f) => setFields(p => Object.assign({}, p, { [f]: !p[f] }));
@@ -326,6 +326,12 @@
           if (source === 'rawg') {
             if (fields.lancamento && selected.released) next.lancamento = selected.released;
             if (fields.metacritic && (selected.metacritic || selected.metacritic === 0)) next.metacritic = selected.metacritic;
+            if (fields.generos && Array.isArray(selected.genres) && selected.genres.length > 0) {
+              const novosIds = allGeneros.filter(g => selected.genres.includes(g.name)).map(g => g.id);
+              const uniao = next.generos.slice();
+              novosIds.forEach(id => { if (!uniao.includes(id)) uniao.push(id); });
+              next.generos = uniao;
+            }
           } else {
             if (fields.gameplay_horas) { const h = hltbHoras(selected.times); if (h) next.gameplay_horas = h; }
           }
@@ -338,7 +344,8 @@
         ? [ { key: 'titulo', label: 'Título', val: selected && selected.name },
             { key: 'lancamento', label: 'Lançamento', val: selected && selected.released },
             { key: 'metacritic', label: 'Metacritic', val: selected && selected.metacritic },
-            { key: 'capa', label: 'Capa', val: selected && selected.image_url ? 'imagem' : null } ]
+            { key: 'capa', label: 'Capa', val: selected && selected.image_url ? 'imagem' : null },
+            { key: 'generos', label: 'Gêneros', val: selected && Array.isArray(selected.genres) && selected.genres.length > 0 ? selected.genres.join(', ') : null } ]
         : [ { key: 'titulo', label: 'Título', val: selected && selected.name },
             { key: 'gameplay_horas', label: 'Gameplay (h)', val: selected ? hltbHoras(selected.times) : '' },
             { key: 'capa', label: 'Capa', val: selected && selected.image_url ? 'imagem' : null } ];
