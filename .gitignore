@@ -29,6 +29,16 @@ npm-debug.log
 # Contexto pessoal de agente de IA (não faz parte do repo original)
 /AGENTS.md
 /CLAUDE.md
+/GEMINI.md
+/.geminiignore
+/RELATORIO_AUDITORIA_JOGOS.md
+
+# Backups, dumps SQL e arquivos temporários/operacionais
+/backups/
+/backup_*.sql
+*.bak
+*.bak.*
+nohup.out
 
 # Ajustes pessoais de ambiente (porta local, etc.) — mesclado automaticamente pelo Docker Compose
 /docker-compose.override.yml
