@@ -400,6 +400,130 @@ app.delete('/posses/:id', autenticar, async (req, res) => {
   }
 });
 
+// --- Log individual por jogo estilo Yamtrack — Issue #5 ---
+// Desacoplado de `posses` (UNIQUE por usuario_id, jogo_id): permite registrar
+// status, nota (0–10 com 1 casa decimal), progresso_minutos, data_inicio,
+// data_termino, comentarios e plataforma_id tanto para jogos da própria
+// biblioteca/família quanto para jogos sem posse (ex: Master System, SNES).
+
+const STATUS_LOG_VALIDOS = ['planejando', 'em_andamento', 'concluido', 'pausado', 'abandonado'];
+
+app.put('/logs-jogo/:jogo_id', autenticar, async (req, res) => {
+  const jogoId = parseInt(req.params.jogo_id, 10);
+  if (!Number.isInteger(jogoId) || jogoId <= 0) {
+    return res.status(400).json({ error: 'jogo_id inválido.' });
+  }
+
+  const {
+    status,
+    nota,
+    progresso_minutos,
+    data_inicio,
+    data_termino,
+    comentarios,
+    plataforma_id,
+  } = req.body || {};
+
+  if (!status || !STATUS_LOG_VALIDOS.includes(status)) {
+    return res.status(400).json({
+      error: `status é obrigatório e deve ser um de: ${STATUS_LOG_VALIDOS.join(', ')}.`,
+    });
+  }
+
+  let notaVal = null;
+  if (nota !== undefined && nota !== null && nota !== '') {
+    const parsedNota = Number(nota);
+    if (!Number.isFinite(parsedNota) || parsedNota < 0 || parsedNota > 10) {
+      return res.status(400).json({ error: 'nota deve ser um número entre 0 e 10.' });
+    }
+    notaVal = Math.round(parsedNota * 10) / 10;
+  }
+
+  let progressoVal = null;
+  if (progresso_minutos !== undefined && progresso_minutos !== null && progresso_minutos !== '') {
+    const parsedProg = Number(progresso_minutos);
+    if (!Number.isInteger(parsedProg) || parsedProg < 0) {
+      return res.status(400).json({ error: 'progresso_minutos deve ser um número inteiro maior ou igual a 0.' });
+    }
+    progressoVal = parsedProg;
+  }
+
+  let plataformaIdVal = null;
+  if (plataforma_id !== undefined && plataforma_id !== null && plataforma_id !== '') {
+    const parsedPlat = Number(plataforma_id);
+    if (!Number.isInteger(parsedPlat) || parsedPlat <= 0) {
+      return res.status(400).json({ error: 'plataforma_id inválido.' });
+    }
+    plataformaIdVal = parsedPlat;
+  }
+
+  const dataInicioVal = data_inicio || null;
+  const dataTerminoVal = data_termino || null;
+  const comentariosVal =
+    typeof comentarios === 'string' && comentarios.trim() !== '' ? comentarios.trim() : null;
+
+  try {
+    const result = await db.query(
+      `INSERT INTO logs_jogo (
+         usuario_id, jogo_id, plataforma_id, status, nota, progresso_minutos,
+         data_inicio, data_termino, comentarios, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+       ON CONFLICT (usuario_id, jogo_id) DO UPDATE SET
+         plataforma_id = EXCLUDED.plataforma_id,
+         status = EXCLUDED.status,
+         nota = EXCLUDED.nota,
+         progresso_minutos = EXCLUDED.progresso_minutos,
+         data_inicio = EXCLUDED.data_inicio,
+         data_termino = EXCLUDED.data_termino,
+         comentarios = EXCLUDED.comentarios,
+         updated_at = now()
+       RETURNING
+         id, usuario_id, jogo_id, plataforma_id, status,
+         nota::float AS nota, progresso_minutos, data_inicio, data_termino,
+         comentarios, created_at, updated_at`,
+      [
+        req.usuario.id,
+        jogoId,
+        plataformaIdVal,
+        status,
+        notaVal,
+        progressoVal,
+        dataInicioVal,
+        dataTerminoVal,
+        comentariosVal,
+      ]
+    );
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Jogo ou plataforma inexistente.' });
+    }
+    console.error('Erro ao salvar log de jogo:', err);
+    res.status(500).json({ error: 'Erro ao salvar o registro do jogo.' });
+  }
+});
+
+app.delete('/logs-jogo/:jogo_id', autenticar, async (req, res) => {
+  const jogoId = parseInt(req.params.jogo_id, 10);
+  if (!Number.isInteger(jogoId) || jogoId <= 0) {
+    return res.status(400).json({ error: 'jogo_id inválido.' });
+  }
+  try {
+    const result = await db.query(
+      'DELETE FROM logs_jogo WHERE usuario_id = $1 AND jogo_id = $2',
+      [req.usuario.id, jogoId]
+    );
+    if (result.rowCount > 0) {
+      return res.status(204).send();
+    }
+    return res.status(404).json({ error: 'Registro de jogo não encontrado.' });
+  } catch (err) {
+    console.error('Erro ao remover log de jogo:', err);
+    res.status(500).json({ error: 'Erro ao remover o registro do jogo.' });
+  }
+});
+
 // Consulta central da Fase 2c, estendida na Fase 3 do #1 (fechada depois do
 // #3): além de WHERE p.usuario_id = :eu, inclui as posses de quem tem vínculo
 // familiar aceito comigo — biblioteca efetiva, mesmo padrão do #3
@@ -430,6 +554,11 @@ app.delete('/posses/:id', autenticar, async (req, res) => {
 // plataformas são duas posses de uma pessoa só. Quem for decidir "isso está
 // duplicado na família" precisa contar usuario_id distintos, não o tamanho
 // do array.
+//
+// Com a #5 (logs_jogo), cada card traz também o log pessoal de quem está
+// logado (LEFT JOIN logs_jogo), e jogos que o usuário registrou no tracker
+// sem nenhuma posse na biblioteca efetiva entram via UNION ALL com
+// `sem_posse = true` e `posse_id = NULL`.
 app.get('/biblioteca', autenticar, async (req, res) => {
   try {
     const result = await db.query(
@@ -462,14 +591,36 @@ app.get('/biblioteca', autenticar, async (req, res) => {
               GROUP BY jogo_id
             ),
             cartoes AS (
-              SELECT * FROM posses_efetivas WHERE usuario_id = $1
+              SELECT
+                posse_id, usuario_id, jogo_id, data_aquisicao, posse_created_at,
+                plataforma_id, plataforma_nome, username, false AS sem_posse
+              FROM posses_efetivas
+              WHERE usuario_id = $1
               UNION ALL
-              SELECT * FROM (
+              SELECT
+                posse_id, usuario_id, jogo_id, data_aquisicao, posse_created_at,
+                plataforma_id, plataforma_nome, username, false AS sem_posse
+              FROM (
                 SELECT DISTINCT ON (jogo_id) *
                 FROM posses_efetivas
                 WHERE jogo_id NOT IN (SELECT jogo_id FROM posses_efetivas WHERE usuario_id = $1)
                 ORDER BY jogo_id, username, plataforma_nome
               ) so_do_familiar
+              UNION ALL
+              SELECT
+                NULL::int AS posse_id,
+                l.usuario_id,
+                l.jogo_id,
+                NULL::date AS data_aquisicao,
+                l.created_at AS posse_created_at,
+                pl_l.id AS plataforma_id,
+                pl_l.nome AS plataforma_nome,
+                NULL::varchar AS username,
+                true AS sem_posse
+              FROM logs_jogo l
+              LEFT JOIN plataformas pl_l ON pl_l.id = l.plataforma_id
+              WHERE l.usuario_id = $1
+                AND l.jogo_id NOT IN (SELECT jogo_id FROM posses_efetivas)
             )
        SELECT
          c.posse_id,
@@ -477,6 +628,7 @@ app.get('/biblioteca', autenticar, async (req, res) => {
          c.posse_created_at,
          c.plataforma_id,
          c.plataforma_nome,
+         c.sem_posse,
          j.id AS jogo_id,
          j.titulo,
          j.lancamento,
@@ -487,11 +639,21 @@ app.get('/biblioteca', autenticar, async (req, res) => {
          j.rawg_id,
          j.hltb_id,
          CASE WHEN c.usuario_id = $1 THEN NULL ELSE c.username END AS origem_username,
-         d.donos,
+         COALESCE(d.donos, '[]'::jsonb) AS donos,
+         l.status AS log_status,
+         l.nota::float AS log_nota,
+         l.progresso_minutos AS log_progresso_minutos,
+         l.data_inicio AS log_data_inicio,
+         l.data_termino AS log_data_termino,
+         l.comentarios AS log_comentarios,
+         l.plataforma_id AS log_plataforma_id,
+         pl_log.nome AS log_plataforma_nome,
          (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
        FROM cartoes c
        JOIN jogos j ON j.id = c.jogo_id
-       JOIN donos_por_jogo d ON d.jogo_id = c.jogo_id
+       LEFT JOIN donos_por_jogo d ON d.jogo_id = c.jogo_id
+       LEFT JOIN logs_jogo l ON l.jogo_id = c.jogo_id AND l.usuario_id = $1
+       LEFT JOIN plataformas pl_log ON pl_log.id = l.plataforma_id
        ORDER BY j.titulo ASC`,
       [req.usuario.id]
     );
@@ -807,12 +969,18 @@ const membrosEfetivaSql = (paramIndex) => `
   WHERE v.tipo = 'familiar' AND v.status = 'aceito' AND $${paramIndex} IN (v.solicitante_id, v.destinatario_id)
 `;
 
-// Colunas selecionadas de propósito: só jogo + plataforma, nunca usuario_id
-// nem posse_id — é o que garante que a origem (própria vs. familiar) não
-// vaza pra quem está vendo o perfil de outra pessoa.
+// Colunas selecionadas de propósito: só jogo + plataforma (+ log público do
+// dono do perfil na #5), nunca usuario_id nem posse_id — é o que garante que a
+// origem (própria vs. familiar) não vaza pra quem está vendo o perfil de outra pessoa.
 const COLUNAS_JOGO_SQL = `
   j.id AS jogo_id, j.titulo, j.lancamento, j.gameplay_minutos, j.metacritic, j.capa,
   pl.id AS plataforma_id, pl.nome AS plataforma_nome,
+  l.status AS log_status,
+  l.nota::float AS log_nota,
+  l.progresso_minutos AS log_progresso_minutos,
+  l.data_inicio AS log_data_inicio,
+  l.data_termino AS log_data_termino,
+  l.comentarios AS log_comentarios,
   (SELECT array_agg(g.name) FROM generos g JOIN jogo_generos jg ON g.id = jg.genero_id WHERE jg.game_id = j.id) AS generos
 `;
 
@@ -848,11 +1016,12 @@ app.get('/usuarios/:username/biblioteca', autenticar, async (req, res) => {
                 SELECT DISTINCT p.jogo_id, p.plataforma_id FROM posses p
                 JOIN membros_eu m ON m.usuario_id = p.usuario_id
               )
-         SELECT ${COLUNAS_JOGO_SQL}
+         SELECT ${COLUNAS_JOGO_SQL}, false AS sem_posse
          FROM biblioteca_dono bd
          JOIN biblioteca_eu be ON be.jogo_id = bd.jogo_id AND be.plataforma_id = bd.plataforma_id
          JOIN jogos j ON j.id = bd.jogo_id
          JOIN plataformas pl ON pl.id = bd.plataforma_id
+         LEFT JOIN logs_jogo l ON l.jogo_id = bd.jogo_id AND l.usuario_id = $1
          ORDER BY j.titulo ASC`,
         [donoId, req.usuario.id]
       );
@@ -860,12 +1029,26 @@ app.get('/usuarios/:username/biblioteca', autenticar, async (req, res) => {
     }
 
     const result = await db.query(
-      `WITH membros AS (${membrosEfetivaSql(1)})
-       SELECT DISTINCT ${COLUNAS_JOGO_SQL}
-       FROM posses p
-       JOIN membros m ON m.usuario_id = p.usuario_id
-       JOIN jogos j ON j.id = p.jogo_id
-       JOIN plataformas pl ON pl.id = p.plataforma_id
+      `WITH membros AS (${membrosEfetivaSql(1)}),
+            posses_dono AS (
+              SELECT DISTINCT p.jogo_id, p.plataforma_id
+              FROM posses p
+              JOIN membros m ON m.usuario_id = p.usuario_id
+            ),
+            itens_perfil AS (
+              SELECT jogo_id, plataforma_id, false AS sem_posse
+              FROM posses_dono
+              UNION ALL
+              SELECT l_only.jogo_id, l_only.plataforma_id, true AS sem_posse
+              FROM logs_jogo l_only
+              WHERE l_only.usuario_id = $1
+                AND l_only.jogo_id NOT IN (SELECT jogo_id FROM posses_dono)
+            )
+       SELECT ${COLUNAS_JOGO_SQL}, ip.sem_posse
+       FROM itens_perfil ip
+       JOIN jogos j ON j.id = ip.jogo_id
+       LEFT JOIN plataformas pl ON pl.id = ip.plataforma_id
+       LEFT JOIN logs_jogo l ON l.jogo_id = ip.jogo_id AND l.usuario_id = $1
        ORDER BY j.titulo ASC`,
       [donoId]
     );

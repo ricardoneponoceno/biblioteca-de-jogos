@@ -67,7 +67,26 @@
       ? API_BASE_URL 
       : (isLocalNetwork ? `${window.location.protocol}//${hostname}:3000` : 'https://api.laricks.com.br');
     
-    const PLATAFORMAS = ['Amazon Games', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'GOG', 'Nintendo 3ds', 'Nintendo Switch', 'Nintendo Switch 2', 'Ubisoft', 'Steam'];
+    const PLATAFORMAS = ['Amazon Games', 'Arcade', 'Dreamcast', 'EA App', 'EPIC', 'EPIC Larissa', 'EPIC Ricardo', 'Game Boy / GBC', 'Game Boy Advance', 'Game Gear', 'GameCube', 'GOG', 'Master System', 'Mega Drive', 'Mídia física', 'NES', 'Nintendo 3DS', 'Nintendo 3ds', 'Nintendo 64', 'Nintendo DS', 'Nintendo Switch', 'Nintendo Switch 2', 'PlayStation', 'PlayStation 2', 'PlayStation 3', 'PlayStation 4', 'PlayStation 5', 'PS Vita', 'PSP', 'Sega Saturn', 'SNES', 'Steam', 'Ubisoft', 'Wii', 'Wii U', 'Xbox', 'Xbox 360', 'Xbox One', 'Xbox Series X/S'];
+
+    // Issue #5: Opções de status estilo Yamtrack
+    const STATUS_LOG_OPCOES = [
+      { value: 'em_andamento', label: 'Em andamento', badgeClass: 'bg-blue-600/90 text-white border-blue-400/40' },
+      { value: 'planejando', label: 'Planejando', badgeClass: 'bg-indigo-600/90 text-white border-indigo-400/40' },
+      { value: 'concluido', label: 'Concluído', badgeClass: 'bg-emerald-600/90 text-white border-emerald-400/40' },
+      { value: 'pausado', label: 'Pausado', badgeClass: 'bg-amber-600/90 text-white border-amber-400/40' },
+      { value: 'abandonado', label: 'Abandonado', badgeClass: 'bg-rose-600/90 text-white border-rose-400/40' },
+    ];
+
+    const getStatusInfo = (status) => STATUS_LOG_OPCOES.find((s) => s.value === status) || null;
+
+    const formatarDataCurta = (isoOrDateStr) => {
+      if (!isoOrDateStr) return null;
+      const s = String(isoOrDateStr).split('T')[0];
+      const partes = s.split('-');
+      if (partes.length !== 3) return s;
+      return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    };
 
     // Usado em toda miniatura de capa que pode vir de fonte externa (Steam,
     // RAWG, HLTB) — cai num placeholder se a URL não carregar.
@@ -127,11 +146,13 @@
     // "duplicado na família".
     const contaDonos = (jogo) => new Set((jogo.donos || []).map(d => d.usuario_id)).size;
 
-    function GameCard({ jogo, onEdit, onDelete, isAdmin, readonly }) {
+    function GameCard({ jogo, onEdit, onDelete, onEditLog, isAdmin, readonly }) {
       const formatarGameplay = (minutos) => {
-        if (!minutos) return 'N/A';
-        const horas = Math.floor(minutos / 60);
-        const mins = minutos % 60;
+        if (minutos === null || minutos === undefined || minutos === '') return 'N/A';
+        const num = Number(minutos);
+        if (!Number.isFinite(num) || num <= 0) return 'N/A';
+        const horas = Math.floor(num / 60);
+        const mins = num % 60;
         return `${horas}h ${mins}m`;
       };
 
@@ -158,32 +179,101 @@
         ? donosPorPessoa.map((p) => (plataformasDivergem ? `${p.username} (${p.plataformas.join(', ')})` : p.username)).join(' + ')
         : null;
 
+      const statusInfo = getStatusInfo(jogo.log_status);
+      const dataTerminoFormatada = formatarDataCurta(jogo.log_data_termino);
+      const temNota = jogo.log_nota !== null && jogo.log_nota !== undefined && jogo.log_nota !== '';
+      const temProgresso = jogo.log_progresso_minutos !== null && jogo.log_progresso_minutos !== undefined && jogo.log_progresso_minutos > 0;
+
       return (
         <div className="bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col justify-between transform hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 group h-full border border-gray-700">
           <div className="relative overflow-hidden aspect-[3/4]">
             <img src={jogo.capa} alt={jogo.titulo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/600x800/1e293b/ffffff?text=Sem+Capa'; }} />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-60"></div>
-            {/* Remover é sobre a própria posse (não exige is_admin — é o que
-                permite qualquer dono tirar um jogo da própria biblioteca);
-                editar é sobre o jogo canônico e continua restrito ao admin. */}
-            {!readonly && (
-              <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
-                  {isAdmin && <button onClick={(e) => { e.stopPropagation(); onEdit(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>}
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(jogo); }} className="p-1.5 sm:p-2 bg-gray-900/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg></button>
+
+            {/* Topo Esquerdo (Yamtrack): Data de finalização se Concluído + preenchida; senão badge de Status */}
+            {jogo.log_status === 'concluido' && dataTerminoFormatada ? (
+              <div
+                className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 px-2 py-0.5 rounded-md bg-emerald-600/90 text-white border border-emerald-400/40 backdrop-blur-sm shadow-lg text-[10px] sm:text-xs font-bold flex items-center gap-1"
+                title={`Concluído em ${dataTerminoFormatada}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                <span>{dataTerminoFormatada}</span>
+              </div>
+            ) : statusInfo ? (
+              <div
+                className={`absolute top-1.5 left-1.5 sm:top-2 sm:left-2 px-2 py-0.5 rounded-md border backdrop-blur-sm shadow-lg text-[10px] sm:text-xs font-bold ${statusInfo.badgeClass}`}
+                title={`Status: ${statusInfo.label}${dataTerminoFormatada ? ` (${dataTerminoFormatada})` : ''}`}
+              >
+                {statusInfo.label}
+              </div>
+            ) : null}
+
+            {/* Topo Direito (Yamtrack): Estrelinha com nota dada pelo jogador */}
+            {temNota && (
+              <div
+                className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 px-2 py-0.5 rounded-md bg-gray-900/90 text-yellow-400 border border-yellow-500/40 backdrop-blur-sm shadow-lg text-[10px] sm:text-xs font-bold flex items-center gap-1"
+                title={`Nota do jogador: ${jogo.log_nota} / 10`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-yellow-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                <span>{Number(jogo.log_nota).toFixed(Number(jogo.log_nota) % 1 === 0 ? 0 : 1)}</span>
+              </div>
+            )}
+
+            {/* Botões de ação no hover: separados da edição canônica para não conflitar */}
+            {(onEditLog || (!readonly && (isAdmin || onDelete))) && (
+              <div className={`absolute right-1.5 sm:right-2 ${temNota ? 'top-8 sm:top-9' : 'top-1.5 sm:top-2'} flex gap-1 sm:gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200`}>
+                {onEditLog && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEditLog(jogo); }}
+                    title="Registrar / Editar progresso (Yamtrack)"
+                    className="p-1.5 sm:p-2 bg-gray-900/85 hover:bg-emerald-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                      <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+                {!readonly && isAdmin && onEdit && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(jogo); }}
+                    title="Editar informações do jogo no catálogo"
+                    className="p-1.5 sm:p-2 bg-gray-900/85 hover:bg-blue-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                  </button>
+                )}
+                {!readonly && onDelete && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(jogo); }}
+                    title={jogo.sem_posse ? 'Remover registro do tracker' : 'Remover da biblioteca'}
+                    className="p-1.5 sm:p-2 bg-gray-900/85 hover:bg-red-600 text-white rounded-full backdrop-blur-sm shadow-lg transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
               </div>
             )}
           </div>
           <div className="p-2 sm:p-4 flex flex-col flex-grow">
             <h2 className="text-sm sm:text-lg font-bold text-white leading-tight mb-1 line-clamp-2" title={jogo.titulo}>{jogo.titulo}</h2>
-            {/* plataforma_nome é a plataforma real da posse (2a); plataforma (sem
-                sufixo) é o texto livre legado da tabela jogos, só existe pra não
-                quebrar a edição canônica (GameFormModal) até o cleanup da 2f. */}
-            <p className="text-[10px] sm:text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2 sm:mb-3">{jogo.plataforma_nome || jogo.plataforma}</p>
-            {/* Selo de origem — só a index (Fase 3 do #1) mostra de qual
-                familiar veio o jogo; o perfil esconde isso de propósito.
-                Com a #20, quando mais de uma pessoa tem o jogo o selo passa a
-                listar todas em vez de dizer só de quem veio. */}
-            {seloDonos ? (
+            {/* plataforma_nome é a plataforma real da posse (2a) ou do log sem posse (#5);
+                plataforma (sem sufixo) é o texto livre legado da tabela jogos. */}
+            <p className="text-[10px] sm:text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2 sm:mb-3">{jogo.plataforma_nome || jogo.log_plataforma_nome || jogo.plataforma}</p>
+            {/* Selo de origem (#20) ou indicação de "Sem posse" (#5) */}
+            {jogo.sem_posse ? (
+              <p className="text-[10px] sm:text-xs text-amber-400/90 -mt-2 mb-2 sm:-mt-3 sm:mb-3 truncate" title="Jogo registrado apenas no tracker (sem posse na biblioteca)">
+                Sem posse
+              </p>
+            ) : seloDonos ? (
               <p className="text-[10px] sm:text-xs text-purple-400 -mt-2 mb-2 sm:-mt-3 sm:mb-3 truncate" title={`Quem tem este jogo: ${seloDonos}`}>
                 {seloDonos}
               </p>
@@ -193,15 +283,25 @@
               </p>
             ) : null}
             {jogo.generos && jogo.generos.length > 0 && (
-              <div className="genre-list mb-2 sm:mb-4">
+              <div className="genre-list mb-2 sm:mb-3">
                 {jogo.generos.slice(0, 2).map(genero => <span key={genero} className="genre-tag">{genero}</span>)}
                 {jogo.generos.length > 2 && <span className="genre-tag">+{jogo.generos.length - 2}</span>}
               </div>
             )}
+            {jogo.log_comentarios && (
+              <p className="text-[10px] sm:text-xs text-gray-300 italic line-clamp-2 mb-2 bg-gray-900/50 px-2 py-1 rounded border border-gray-700/60" title={jogo.log_comentarios}>
+                "{jogo.log_comentarios}"
+              </p>
+            )}
             <div className="flex justify-between items-center pt-2 sm:pt-3 border-t border-gray-700 mt-auto">
-              <div className="flex items-center text-gray-400 text-[10px] sm:text-xs" title="Tempo de Jogo">
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                 {formatarGameplay(jogo.gameplay_minutos)}
+              <div
+                className={`flex items-center text-[10px] sm:text-xs ${temProgresso ? 'text-cyan-400 font-semibold' : 'text-gray-400'}`}
+                title={temProgresso ? `Seu tempo jogado: ${formatarGameplay(jogo.log_progresso_minutos)}${jogo.gameplay_minutos ? ` (Estimativa HLTB: ${formatarGameplay(jogo.gameplay_minutos)})` : ''}` : 'Tempo estimado (HLTB)'}
+              >
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                 {temProgresso
+                   ? `${formatarGameplay(jogo.log_progresso_minutos)}${jogo.gameplay_minutos ? ` / ${Math.round(jogo.gameplay_minutos / 60)}h` : ''}`
+                   : formatarGameplay(jogo.gameplay_minutos)}
               </div>
               <span className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md ${jogo.metacritic == null || jogo.metacritic === "N/A" || jogo.metacritic === undefined ? 'bg-gray-700 text-gray-300' : jogo.metacritic >= 75 ? 'bg-green-600/20 text-green-400 border border-green-600/30' : jogo.metacritic >= 50 ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30' : 'bg-red-600/20 text-red-400 border border-red-600/30'}`}>{jogo.metacritic || '-'}</span>
             </div>
@@ -607,8 +707,10 @@
 
     function AdicionarPosseModal({ onAdded, onCancel, onCadastrarNovo, plataformas, jogoInicial }) {
       const [selectedJogo, setSelectedJogo] = useState(jogoInicial || null);
+      const [possuiJogo, setPossuiJogo] = useState(true);
       const [plataformaId, setPlataformaId] = useState('');
       const [dataAquisicao, setDataAquisicao] = useState('');
+      const [statusInicial, setStatusInicial] = useState('planejando');
       const [saveError, setSaveError] = useState('');
       const [saving, setSaving] = useState(false);
 
@@ -617,14 +719,21 @@
         if (!plataformaId) { setSaveError('Escolha uma plataforma.'); return; }
         setSaveError(''); setSaving(true);
         try {
-          await axios.post(`${BACKEND_URL}/posses`, {
-            jogo_id: selectedJogo.id,
-            plataforma_id: parseInt(plataformaId, 10),
-            data_aquisicao: dataAquisicao || null,
-          });
+          if (possuiJogo) {
+            await axios.post(`${BACKEND_URL}/posses`, {
+              jogo_id: selectedJogo.id,
+              plataforma_id: parseInt(plataformaId, 10),
+              data_aquisicao: dataAquisicao || null,
+            });
+          } else {
+            await axios.put(`${BACKEND_URL}/logs-jogo/${selectedJogo.id}`, {
+              status: statusInicial,
+              plataforma_id: parseInt(plataformaId, 10),
+            });
+          }
           onAdded();
         } catch (err) {
-          setSaveError((err.response && err.response.data && err.response.data.error) || 'Erro ao adicionar à biblioteca.');
+          setSaveError((err.response && err.response.data && err.response.data.error) || 'Erro ao salvar.');
         } finally {
           setSaving(false);
         }
@@ -634,7 +743,7 @@
         <div className="modal-backdrop p-4">
           <div className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-700 flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-              <h2 className="text-xl font-bold text-white">Adicionar à minha biblioteca</h2>
+              <h2 className="text-xl font-bold text-white">Adicionar jogo / Registrar progresso</h2>
             </div>
 
             <div className="p-6 overflow-y-auto space-y-4 flex-grow">
@@ -655,6 +764,20 @@
                     </div>
                   </div>
                   {saveError && <div className="px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">{saveError}</div>}
+                  <label className="flex items-start gap-2.5 p-3 rounded-lg bg-gray-900/60 border border-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={possuiJogo}
+                      onChange={(e) => setPossuiJogo(e.target.checked)}
+                      className="mt-0.5 form-checkbox bg-gray-700 border-gray-500 text-blue-500"
+                    />
+                    <div className="text-sm">
+                      <div className="font-semibold text-white">Possuo este jogo na minha biblioteca</div>
+                      <div className="text-xs text-gray-400">
+                        Desmarque se quiser apenas registrar o status (Planejando, Em andamento...) sem contá-lo nas posses da sua biblioteca.
+                      </div>
+                    </div>
+                  </label>
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-300">Plataforma</label>
                     <select value={plataformaId} onChange={(e) => setPlataformaId(e.target.value)} required className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none">
@@ -662,10 +785,19 @@
                       {plataformas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-300">Data de aquisição (opcional)</label>
-                    <input type="date" value={dataAquisicao} onChange={(e) => setDataAquisicao(e.target.value)} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
-                  </div>
+                  {possuiJogo ? (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-300">Data de aquisição (opcional)</label>
+                      <input type="date" value={dataAquisicao} onChange={(e) => setDataAquisicao(e.target.value)} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none" />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-300">Status inicial</label>
+                      <select value={statusInicial} onChange={(e) => setStatusInicial(e.target.value)} className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none">
+                        {STATUS_LOG_OPCOES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                   {!jogoInicial && <button type="button" onClick={() => setSelectedJogo(null)} className="text-sm text-gray-400 hover:text-gray-300 underline">Voltar pra busca</button>}
                 </form>
               )}
@@ -675,9 +807,226 @@
               <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
               {selectedJogo && (
                 <button type="submit" form="posse-form" disabled={saving} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg">
-                  {saving ? 'Adicionando...' : 'Adicionar à biblioteca'}
+                  {saving ? 'Salvando...' : (possuiJogo ? 'Adicionar à biblioteca' : 'Registrar no tracker')}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Issue #5: Modal estilo Yamtrack para registrar/editar Status, Nota (0–10),
+    // Progresso (Horas/Minutos), Data de Início, Data de Término, Plataforma e Comentários.
+    function LogJogoModal({ jogo, plataformas, onSaved, onCancel }) {
+      const jogoId = jogo.jogo_id || jogo.id;
+      const temLogExistente = !!jogo.log_status;
+      const [status, setStatus] = useState(jogo.log_status || 'em_andamento');
+      const [plataformaId, setPlataformaId] = useState(
+        jogo.log_plataforma_id || jogo.plataforma_id || ''
+      );
+      const [nota, setNota] = useState(
+        jogo.log_nota !== null && jogo.log_nota !== undefined ? String(jogo.log_nota) : ''
+      );
+      const [horas, setHoras] = useState(
+        jogo.log_progresso_minutos ? String(Math.floor(jogo.log_progresso_minutos / 60)) : ''
+      );
+      const [minutos, setMinutos] = useState(
+        jogo.log_progresso_minutos ? String(jogo.log_progresso_minutos % 60) : ''
+      );
+      const [dataInicio, setDataInicio] = useState(
+        jogo.log_data_inicio ? String(jogo.log_data_inicio).split('T')[0] : ''
+      );
+      const [dataTermino, setDataTermino] = useState(
+        jogo.log_data_termino ? String(jogo.log_data_termino).split('T')[0] : ''
+      );
+      const [comentarios, setComentarios] = useState(jogo.log_comentarios || '');
+      const [erro, setErro] = useState('');
+      const [salvando, setSalvando] = useState(false);
+      const [removendo, setRemovendo] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setErro('');
+        setSalvando(true);
+        try {
+          const h = horas !== '' ? parseInt(horas, 10) || 0 : 0;
+          const m = minutos !== '' ? parseInt(minutos, 10) || 0 : 0;
+          const progressoMinutos = (horas !== '' || minutos !== '') ? (h * 60 + m) : null;
+
+          await axios.put(`${BACKEND_URL}/logs-jogo/${jogoId}`, {
+            status,
+            plataforma_id: plataformaId ? parseInt(plataformaId, 10) : null,
+            nota: nota !== '' ? parseFloat(nota) : null,
+            progresso_minutos: progressoMinutos,
+            data_inicio: dataInicio || null,
+            data_termino: dataTermino || null,
+            comentarios: comentarios.trim() || null,
+          });
+          onSaved();
+        } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao salvar registro.');
+        } finally {
+          setSalvando(false);
+        }
+      };
+
+      const handleLimparLog = async () => {
+        const msg = jogo.sem_posse
+          ? `Remover "${jogo.titulo}" do seu tracker?`
+          : `Limpar o registro de progresso/nota de "${jogo.titulo}"? (O jogo continuará na sua biblioteca)`;
+        if (!window.confirm(msg)) return;
+        setErro('');
+        setRemovendo(true);
+        try {
+          await axios.delete(`${BACKEND_URL}/logs-jogo/${jogoId}`);
+          onSaved();
+        } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao remover registro.');
+        } finally {
+          setRemovendo(false);
+        }
+      };
+
+      return (
+        <div className="modal-backdrop p-4" onClick={onCancel}>
+          <div
+            className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-700 flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <div className="flex items-center gap-3 min-w-0">
+                <img src={jogo.capa} className="w-10 h-14 object-cover rounded flex-shrink-0" onError={capaFallback} />
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold text-white truncate">{jogo.titulo}</h2>
+                  <p className="text-xs text-gray-400">Registrar Progresso e Avaliação</p>
+                </div>
+              </div>
+              <button type="button" onClick={onCancel} className="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+
+            <form onSubmit={handleSubmit} id="log-jogo-form" className="p-6 overflow-y-auto space-y-4 flex-grow">
+              {erro && <div className="px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">{erro}</div>}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                  >
+                    {STATUS_LOG_OPCOES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Plataforma jogada</label>
+                  <select
+                    value={plataformaId}
+                    onChange={(e) => setPlataformaId(e.target.value)}
+                    className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                  >
+                    <option value="">{jogo.plataforma_nome ? `${jogo.plataforma_nome} (padrão)` : 'Selecione...'}</option>
+                    {plataformas.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Nota (0 a 10)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    value={nota}
+                    onChange={(e) => setNota(e.target.value)}
+                    placeholder="Ex: 8.5"
+                    className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Progresso (Tempo de jogo)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={horas}
+                      onChange={(e) => setHoras(e.target.value)}
+                      placeholder="Horas"
+                      className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={minutos}
+                      onChange={(e) => setMinutos(e.target.value)}
+                      placeholder="Min"
+                      className="w-24 p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Data de Início</label>
+                  <input
+                    type="date"
+                    value={dataInicio}
+                    onChange={(e) => setDataInicio(e.target.value)}
+                    className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-300">Data de Término</label>
+                  <input
+                    type="date"
+                    value={dataTermino}
+                    onChange={(e) => setDataTermino(e.target.value)}
+                    className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-gray-300">Comentários</label>
+                <textarea
+                  rows={3}
+                  value={comentarios}
+                  onChange={(e) => setComentarios(e.target.value)}
+                  placeholder="Anotações, review ou impressões sobre o jogo..."
+                  className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none resize-y"
+                />
+              </div>
+            </form>
+
+            <div className="bg-gray-900 p-4 flex items-center justify-between gap-3 border-t border-gray-700">
+              {temLogExistente ? (
+                <button
+                  type="button"
+                  onClick={handleLimparLog}
+                  disabled={removendo || salvando}
+                  className="px-3.5 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg font-semibold transition-colors disabled:opacity-50"
+                >
+                  {removendo ? 'Removendo...' : (jogo.sem_posse ? 'Remover do tracker' : 'Limpar log')}
+                </button>
+              ) : <div />}
+              <div className="flex gap-3">
+                <button type="button" onClick={onCancel} className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600">Cancelar</button>
+                <button type="submit" form="log-jogo-form" disabled={salvando || removendo} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg shadow-lg">
+                  {salvando ? 'Salvando...' : 'Salvar registro'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -855,6 +1204,7 @@
       const [apiConfig, setApiConfig] = useState({});
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingGame, setEditingGame] = useState(null);
+      const [editingLogGame, setEditingLogGame] = useState(null);
       const [isAddModalOpen, setIsAddModalOpen] = useState(false);
       const [isImportarSteamOpen, setIsImportarSteamOpen] = useState(false);
       // true quando o GameFormModal foi aberto via "não encontrei" (dentro do
@@ -873,7 +1223,7 @@
       // so_duplicados guarda '' ou '1', e não booleano, pra não quebrar o
       // "Exibindo X de Y" — ele decide se há filtro ativo testando os valores
       // contra '', e um false contaria como filtro sempre ligado.
-      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '', so_duplicados: '' });
+      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', status_log: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '', so_duplicados: '' });
 
       const handleAuthSuccess = () => {
         const payload = decodeJwt(localStorage.getItem('gameLibToken'));
@@ -952,7 +1302,7 @@
       useEffect(() => { fetchPendentes(); }, [fetchPendentes]);
 
       const handleFilterChange = (e) => setFilters(p => ({ ...p, [e.target.name]: e.target.value }));
-      const filtrosVazios = { titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' };
+      const filtrosVazios = { titulo: '', plataforma: '', genero: '', status_log: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '', so_duplicados: '' };
 
       // Troca de modo sempre reseta os filtros — o dropdown de plataforma lista
       // conjuntos diferentes em cada modo (plataformas reais da posse vs. o
@@ -999,6 +1349,12 @@
       };
 
       const handleRemoverPosse = async (item) => {
+        if (item.sem_posse) {
+          if (window.confirm(`Remover "${item.titulo}" do seu tracker?`)) {
+            try { await axios.delete(`${BACKEND_URL}/logs-jogo/${item.jogo_id || item.id}`); fetchBiblioteca(true); } catch (err) { alert("Erro ao remover do tracker."); }
+          }
+          return;
+        }
         if (window.confirm(`Remover "${item.titulo}" da sua biblioteca?`)) {
           try { await axios.delete(`${BACKEND_URL}/posses/${item.posse_id}`); fetchBiblioteca(true); } catch (err) { alert("Erro ao remover."); }
         }
@@ -1038,8 +1394,15 @@
         // consolidação existe pra mostrar. O selo do card explica a divergência.
         .filter(item => !filters.plataforma
           || item.plataforma_nome === filters.plataforma
+          || item.log_plataforma_nome === filters.plataforma
           || (item.donos || []).some(d => d.plataforma_nome === filters.plataforma))
         .filter(item => !filters.genero || (item.generos && item.generos.includes(filters.genero)))
+        .filter(item => {
+          if (!filters.status_log) return true;
+          if (filters.status_log === 'sem_status') return !item.log_status;
+          if (filters.status_log === 'sem_posse') return !!item.sem_posse;
+          return item.log_status === filters.status_log;
+        })
         .filter(item => !filters.gameplay_min || item.gameplay_minutos >= filters.gameplay_min * 60)
         .filter(item => !filters.gameplay_max || item.gameplay_minutos <= filters.gameplay_max * 60)
         .filter(item => !filters.metacritic_min || item.metacritic >= filters.metacritic_min)
@@ -1055,13 +1418,17 @@
       const itemsPendentes = pendentes.filter(item => !filters.titulo || item.titulo.toLowerCase().includes(filters.titulo.toLowerCase()));
 
       const cardItems = modo === 'catalogo' ? catalogo : modo === 'importacao' ? itemsPendentes : itemsBiblioteca;
-      const totalItems = modo === 'catalogo' ? totalCatalogo : modo === 'importacao' ? pendentes.length : biblioteca.length;
+      // Issue #5: o contador de jogos da biblioteca exclui os jogos registrados
+      // apenas no tracker (sem_posse = true).
+      const totalJogosComPosse = biblioteca.filter(item => !item.sem_posse).length;
+      const totalSemPosse = biblioteca.filter(item => item.sem_posse).length;
+      const totalItems = modo === 'catalogo' ? totalCatalogo : modo === 'importacao' ? pendentes.length : totalJogosComPosse;
 
       // Achata as plataformas de todos os donos, não só a do card (#20): sem
       // isso, uma plataforma que só a familiar usa some da lista de filtros e
       // vira inalcançável, mesmo com o jogo dela aparecendo na tela.
       const plataformasComJogo = Array.from(new Set(
-        biblioteca.flatMap(item => [item.plataforma_nome, ...(item.donos || []).map(d => d.plataforma_nome)])
+        biblioteca.flatMap(item => [item.plataforma_nome, item.log_plataforma_nome, ...(item.donos || []).map(d => d.plataforma_nome)])
       )).filter(Boolean).sort();
 
       // Esconde o botão de "só duplicados" (#21) pra quem não tem vínculo
@@ -1078,9 +1445,12 @@
               {usuarioUsername && (
                 <p className="text-gray-400 mt-2">
                   {Object.values(filters).some(v => v !== '') ? (
-                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{totalItems}</span> jogos{modo === 'catalogo' ? ' no catálogo' : modo === 'importacao' ? ' pendentes' : ''}.</span>
+                    <span>Exibindo <span className="font-bold text-cyan-400">{cardItems.length}</span> de <span className="font-bold text-cyan-400">{modo === 'biblioteca' ? biblioteca.length : totalItems}</span> itens{modo === 'catalogo' ? ' no catálogo' : modo === 'importacao' ? ' pendentes' : ` (${totalJogosComPosse} na biblioteca${totalSemPosse > 0 ? ` + ${totalSemPosse} sem posse` : ''})`}.</span>
                   ) : (
-                    <span>Atualmente com <span className="font-bold text-cyan-400">{totalItems}</span> jogos {modo === 'catalogo' ? 'no catálogo' : modo === 'importacao' ? 'pendentes de revisão' : 'na sua biblioteca'}.</span>
+                    <span>
+                      Atualmente com <span className="font-bold text-cyan-400">{totalItems}</span> jogos {modo === 'catalogo' ? 'no catálogo' : modo === 'importacao' ? 'pendentes de revisão' : 'na sua biblioteca'}
+                      {modo === 'biblioteca' && totalSemPosse > 0 ? <span> • <span className="font-bold text-amber-400">{totalSemPosse}</span> sem posse no tracker</span> : null}.
+                    </span>
                   )}
                 </p>
               )}
@@ -1113,7 +1483,7 @@
                 {modo === 'importacao' ? (
                   <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar nos pendentes..." className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                     <input name="titulo" value={filters.titulo} onChange={handleFilterChange} placeholder="Buscar..." className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
                     <select name="plataforma" value={filters.plataforma} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                       <option value="">Plataformas</option>{(modo === 'catalogo' ? PLATAFORMAS : plataformasComJogo).map(p => <option key={p} value={p}>{p}</option>)}
@@ -1121,6 +1491,14 @@
                     <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                       <option value="">Gêneros</option>{allGeneros.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
                     </select>
+                    {modo === 'biblioteca' && (
+                      <select name="status_log" value={filters.status_log} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        <option value="">Todos os status</option>
+                        {STATUS_LOG_OPCOES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        <option value="sem_status">Sem status</option>
+                        <option value="sem_posse">Apenas sem posse</option>
+                      </select>
+                    )}
                     <div className="flex gap-2">
                       <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
                       <input name="gameplay_max" type="number" value={filters.gameplay_max} onChange={handleFilterChange} placeholder="Máx (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />
@@ -1151,9 +1529,9 @@
 
               {loading ? <div className="flex justify-center mt-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div> : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
-                  {/* A key da biblioteca usa posse_id: "id" aqui é o jogo
-                      canônico, e o mesmo jogo em duas plataformas minhas são
-                      dois cards — com key igual, o React reaproveita o nó
+                  {/* A key da biblioteca usa posse_id (ou log-${id} quando sem posse):
+                      "id" aqui é o jogo canônico, e o mesmo jogo em duas plataformas
+                      minhas são dois cards — com key igual, o React reaproveita o nó
                       errado ao reordenar/filtrar. No catálogo e nos pendentes
                       não há posse, e o id já é único. */}
                   {cardItems.length > 0 ? cardItems.map(item =>
@@ -1162,7 +1540,15 @@
                         <GameCard jogo={item} onEdit={() => {}} onDelete={handleDeleteCard} isAdmin={false} />
                       </div>
                     ) : (
-                      <GameCard key={item.posse_id || item.id} jogo={item} onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}} onDelete={handleDeleteCard} isAdmin={isAdmin && modo === 'catalogo'} readonly={modo !== 'catalogo' && !!item.origem_username} />
+                      <GameCard
+                        key={item.posse_id ? `posse-${item.posse_id}` : `jogo-${item.id}`}
+                        jogo={item}
+                        onEdit={(j)=>{setNovoJogoParaPosse(false);setEditingGame(j);setIsModalOpen(true);}}
+                        onEditLog={(j)=>setEditingLogGame(j)}
+                        onDelete={handleDeleteCard}
+                        isAdmin={isAdmin && modo === 'catalogo'}
+                        readonly={modo !== 'catalogo' && !!item.origem_username}
+                      />
                     )
                   ) : <div className="col-span-full flex flex-col items-center justify-center mt-10 text-gray-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><p className="text-xl">{modo === 'catalogo' ? 'Nenhum jogo encontrado no catálogo.' : modo === 'importacao' ? 'Nada pendente — clique em "Importar da Steam" pra sincronizar.' : (biblioteca.length === 0 ? 'Sua biblioteca está vazia — adicione um jogo.' : 'Nenhum jogo encontrado com os filtros aplicados.')}</p></div>}
                 </div>
@@ -1179,6 +1565,14 @@
               onCancel={()=>{setIsModalOpen(false);setEditingGame(null);setNovoJogoParaPosse(false);setPendenteParaResolverAposCadastro(null);}}
               apiConfig={apiConfig}
               allGeneros={allGeneros}
+            />
+          )}
+          {editingLogGame && (
+            <LogJogoModal
+              jogo={editingLogGame}
+              plataformas={plataformas}
+              onSaved={() => { setEditingLogGame(null); fetchBiblioteca(true); }}
+              onCancel={() => setEditingLogGame(null)}
             />
           )}
           {isAuthModalOpen && <AuthModal onSuccess={handleAuthSuccess} onCancel={() => setIsAuthModalOpen(false)} />}
@@ -1580,7 +1974,7 @@
       const [error, setError] = useState(null);
       const [emComum, setEmComum] = useState(false);
       const [abaVinculosModal, setAbaVinculosModal] = useState(null);
-      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
+      const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', status_log: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
 
       const meuId = React.useMemo(() => {
         const payload = decodeJwt(localStorage.getItem('gameLibToken'));
@@ -1630,7 +2024,7 @@
 
       const handleFilterChange = (e) => setFilters((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-      const plataformasComJogo = Array.from(new Set(biblioteca.map((j) => j.plataforma_nome))).sort();
+      const plataformasComJogo = Array.from(new Set(biblioteca.map((j) => j.plataforma_nome).filter(Boolean))).sort();
 
       // Mesmo shape que a index espera do GameCard: precisa de "id" (usa
       // jogo_id, já que não há posse_id aqui — não revelar origem é o ponto).
@@ -1638,6 +2032,12 @@
         .filter((j) => !filters.titulo || j.titulo.toLowerCase().includes(filters.titulo.toLowerCase()))
         .filter((j) => !filters.plataforma || j.plataforma_nome === filters.plataforma)
         .filter((j) => !filters.genero || (j.generos && j.generos.includes(filters.genero)))
+        .filter((j) => {
+          if (!filters.status_log) return true;
+          if (filters.status_log === 'sem_status') return !j.log_status;
+          if (filters.status_log === 'sem_posse') return !!j.sem_posse;
+          return j.log_status === filters.status_log;
+        })
         .filter((j) => !filters.gameplay_min || j.gameplay_minutos >= filters.gameplay_min * 60)
         .filter((j) => !filters.gameplay_max || j.gameplay_minutos <= filters.gameplay_max * 60)
         .filter((j) => !filters.metacritic_min || j.metacritic >= filters.metacritic_min)
@@ -1718,6 +2118,12 @@
               </select>
               <select name="genero" value={filters.genero} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
                 <option value="">Gêneros</option>{allGeneros.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+              </select>
+              <select name="status_log" value={filters.status_log} onChange={handleFilterChange} className="p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                <option value="">Todos os status</option>
+                {STATUS_LOG_OPCOES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                <option value="sem_status">Sem status</option>
+                <option value="sem_posse">Apenas sem posse</option>
               </select>
               <div className="flex gap-2">
                 <input name="gameplay_min" type="number" value={filters.gameplay_min} onChange={handleFilterChange} placeholder="Min (h)" className="w-full p-2.5 bg-gray-900 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" />

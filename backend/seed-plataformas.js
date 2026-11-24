@@ -11,7 +11,13 @@ const bcrypt = require('bcryptjs');
 const db = require('./db');
 
 const PLATAFORMAS = [
-  'Steam', 'Epic', 'GOG', 'Nintendo Switch', 'PlayStation', 'Xbox', 'Mídia física',
+  'Steam', 'Epic', 'GOG', 'EA App', 'Ubisoft', 'Amazon Games', 'Mídia física',
+  'Master System', 'Mega Drive', 'Sega Saturn', 'Dreamcast', 'Game Gear',
+  'NES', 'SNES', 'Nintendo 64', 'GameCube', 'Wii', 'Wii U', 'Nintendo Switch', 'Nintendo Switch 2',
+  'Game Boy / GBC', 'Game Boy Advance', 'Nintendo DS', 'Nintendo 3DS',
+  'PlayStation', 'PlayStation 2', 'PlayStation 3', 'PlayStation 4', 'PlayStation 5', 'PSP', 'PS Vita',
+  'Xbox', 'Xbox 360', 'Xbox One', 'Xbox Series X/S',
+  'Arcade',
 ];
 
 const DEV_USER_USERNAME = 'marcelo';

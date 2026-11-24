@@ -41,13 +41,17 @@ Uma aplicação Full-Stack desenvolvida para catalogar, gerenciar e exibir uma b
 
 ## ✨ Funcionalidades
 
-- **Catálogo Dinâmico:** Visualização em grid estilo "Poster", adaptável para Desktop e Mobile.
+- **Catálogo Dinâmico & Biblioteca Familiar:** Visualização em grid estilo "Poster" com suporte a contas individuais, compartilhamento de biblioteca por vínculo familiar e comparação de jogos em comum entre amigos.
+- **Tracker de Progresso estilo Yamtrack (Issue #5):** Registro individual por usuário contendo:
+  - **Status:** `Em andamento`, `Planejando`, `Concluído`, `Pausado` e `Abandonado`.
+  - **Avaliação e Tempo:** Nota de `0` a `10` (com casa decimal, exibida com `★` no topo direito do card), tempo jogado em horas/minutos (exibido no rodapé esquerdo), datas de início/término (data de conclusão exibida no topo esquerdo) e comentários.
+  - **Suporte a Jogos Sem Posse:** Permite rastrear jogos jogados fora da coleção própria (ex.: consoles clássicos como *Master System*, *SNES*, *PS2*) escolhendo a plataforma real sem inflar o contador de posses da biblioteca.
+- **Importação Steam:** Sincronização da biblioteca Steam via `SteamID64` com fila de revisão e reconciliação contra o catálogo canônico.
 - **Automação de Dados (Scraping/APIs):** Ao digitar o nome do jogo, o sistema busca automaticamente:
   - Tempo médio de conclusão (via API customizada do *HowLongToBeat*).
-  - Nota no Metacritic e data de lançamento (via *RAWG API*).
+  - Nota no Metacritic, data de lançamento e sugestão automática de gêneros (via *RAWG API*).
   - Capa do jogo em alta resolução.
-- **Filtros Avançados:** Busca por título, plataforma, gêneros, tempo de gameplay ou nota do Metacritic.
-- **Modo Administrador:** Ações de adicionar, editar e excluir jogos são ocultadas do público e liberadas apenas através de uma flag de autenticação em LocalStorage.
+- **Filtros Avançados:** Busca por título, plataforma, gêneros, status do tracker, jogos duplicados na família, tempo de gameplay ou nota do Metacritic.
 - **Responsividade Total:** Interface construída com TailwindCSS garantindo usabilidade em qualquer tamanho de tela.
 
 ---
@@ -145,9 +149,12 @@ Gerar sua chave da **API** do **RAWG** em: https://rawg.io/apidocs
 
 A base de dados foi modelada de forma normalizada para garantir integridade:
 
-- Tabela `jogos`: Armazena os metadados principais (título, plataforma, capa, metacritic, etc).
-- Tabela `generos`: Dicionário único de gêneros disponíveis.
-- Tabela `jogo_generos`: Tabela pivô resolvendo o relacionamento Muitos-para-Muitos.
+- Tabela `jogos`: Armazena os metadados principais do catálogo canônico (título, lançamento, capa, metacritic, `rawg_id`, `hltb_id`, etc).
+- Tabela `generos` e `jogo_generos`: Dicionário único de gêneros e tabela pivô N:N.
+- Tabela `usuarios` e `vinculos`: Contas autenticadas via JWT (`HS256`) e relações simétricas de amizade e família.
+- Tabela `plataformas` e `posses`: Sistemas/lojas (36 plataformas entre lojas de PC e consoles clássicos/atuais) e vínculo de posse de cada usuário.
+- Tabela `logs_jogo`: Registro individual de progresso estilo Yamtrack (`status`, `nota`, `progresso_minutos`, `data_inicio`, `data_termino`, `comentarios`, `plataforma_id`), desacoplado de `posses`.
+- Tabelas `contas_plataforma` e `importacoes_pendentes`: Vínculo de conta externa (Steam) e staging de reconciliação de jogos importados.
 
 ---
 
