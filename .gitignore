@@ -2,6 +2,7 @@
 /backend/node_modules
 
 # Ficheiro de variáveis de ambiente do Backend
+/.env
 /backend/.env
 /backend/.env.local
 

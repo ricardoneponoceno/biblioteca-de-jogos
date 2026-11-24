@@ -11,17 +11,19 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:5432:5432"
+    env_file:
+      - ./backend/.env
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: gamelib_db
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin}
+      POSTGRES_DB: ${DB_DATABASE:-gamelib_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - gamelib-network
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d gamelib_db"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 60s
       timeout: 5s
       retries: 3
