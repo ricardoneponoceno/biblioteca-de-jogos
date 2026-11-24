@@ -1,6 +1,9 @@
+import collections
 import concurrent.futures
 import os
-from flask import Flask, jsonify
+import threading
+import time
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from howlongtobeatpy import HowLongToBeat
 
@@ -11,6 +14,38 @@ origins = os.environ.get('CORS_ORIGIN', '').split(',')
 if not origins or origins == ['']:
     print("AVISO: A variável de ambiente CORS_ORIGIN não está definida. CORS não estará ativo.")
 CORS(app, resources={r"/*": {"origins": origins}})
+
+RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MAX', '30'))
+RATE_LIMIT_WINDOW = int(os.environ.get('RATE_LIMIT_WINDOW', '60'))
+_rate_lock = threading.Lock()
+_rate_buckets = collections.defaultdict(collections.deque)
+
+
+def _client_ip():
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip.strip()
+    xff = request.headers.get('X-Forwarded-For')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+@app.before_request
+def enforce_rate_limit():
+    if request.method == 'OPTIONS':
+        return None
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW
+    ip = _client_ip()
+    with _rate_lock:
+        bucket = _rate_buckets[ip]
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_MAX:
+            return jsonify({"error": "Limite de requisições excedido. Aguarde um momento e tente novamente."}), 429
+        bucket.append(now)
+    return None
 
 # Quantos candidatos no máximo devolver numa busca por título.
 MAX_RESULTS = 15

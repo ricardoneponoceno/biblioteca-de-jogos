@@ -1,5 +1,9 @@
+import collections
 import os
-from flask import Flask, jsonify
+import threading
+import time
+import urllib.parse
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import requests
 
@@ -8,6 +12,8 @@ RAWG_API_KEY = os.environ.get('RAWG_API_KEY')
 RAWG_BASE = "https://api.rawg.io/api/games"
 MAX_RESULTS = 15
 UPSTREAM_TIMEOUT = 10   # segundos que esperamos a RAWG antes de desistir
+RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MAX', '30'))
+RATE_LIMIT_WINDOW = int(os.environ.get('RATE_LIMIT_WINDOW', '60'))
 
 app = Flask(__name__)
 
@@ -16,6 +22,36 @@ origins = os.environ.get('CORS_ORIGIN', '').split(',')
 if not origins or origins == ['']:
     print("AVISO: A variável de ambiente CORS_ORIGIN não está definida. CORS não estará ativo.")
 CORS(app, resources={r"/*": {"origins": origins}})
+
+_rate_lock = threading.Lock()
+_rate_buckets = collections.defaultdict(collections.deque)
+
+
+def _client_ip():
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip.strip()
+    xff = request.headers.get('X-Forwarded-For')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+@app.before_request
+def enforce_rate_limit():
+    if request.method == 'OPTIONS':
+        return None
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW
+    ip = _client_ip()
+    with _rate_lock:
+        bucket = _rate_buckets[ip]
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_MAX:
+            return jsonify({"error": "Limite de requisições excedido. Aguarde um momento e tente novamente."}), 429
+        bucket.append(now)
+    return None
 
 
 def key_missing():
@@ -95,7 +131,7 @@ def search_games(query):
         return falha_upstream(e)
 
 
-@app.route('/rawg/game/<id_or_slug>', methods=['GET'])
+@app.route('/rawg/game/<path:id_or_slug>', methods=['GET'])
 def game_by_id(id_or_slug):
     """Busca exata por id numérico ou slug — usado pelo escape hatch de colar link.
 
@@ -103,8 +139,9 @@ def game_by_id(id_or_slug):
     """
     if key_missing():
         return jsonify({"error": "A chave da API da RAWG não foi configurada no servidor."}), 500
+    safe_id_or_slug = urllib.parse.quote(id_or_slug, safe='')
     try:
-        resp = requests.get(f"{RAWG_BASE}/{id_or_slug}", params={"key": RAWG_API_KEY},
+        resp = requests.get(f"{RAWG_BASE}/{safe_id_or_slug}", params={"key": RAWG_API_KEY},
                             timeout=UPSTREAM_TIMEOUT)
         if resp.status_code == 404:
             return jsonify({"error": f"Jogo '{id_or_slug}' não encontrado."}), 404

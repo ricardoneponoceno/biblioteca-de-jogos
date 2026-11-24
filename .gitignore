@@ -17,6 +17,8 @@
 # Ficheiros de log e sistema
 npm-debug.log
 .DS_Store
+__pycache__/
+*.pyc
 
 # Dados da Base de Dados
 /postgres-data/
