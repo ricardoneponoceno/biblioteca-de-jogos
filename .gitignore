@@ -45,3 +45,6 @@ nohup.out
 
 # Ajustes pessoais de ambiente (porta local, etc.) — mesclado automaticamente pelo Docker Compose
 /docker-compose.override.yml
+
+# Credenciais privadas do TownSquare oficial (adminToken / adminUrl)
+/.townsquare.admin.local

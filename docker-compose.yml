@@ -137,31 +137,6 @@ services:
         limits:
           memory: 128M
 
-  townsquare:
-    build:
-      context: ./TownSquare
-      dockerfile: Dockerfile
-    container_name: gamelib-townsquare
-    restart: unless-stopped
-    environment:
-      - ALLOWED_ORIGINS=http://localhost:8081,http://192.168.18.183:8081
-      - AUTO_REGISTER=true
-    ports:
-      - "127.0.0.1:3004:8787"
-    networks:
-      - gamelib-network
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 8787"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
 networks:
   gamelib-network:
     driver: bridge

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,17 +7,10 @@
   
   <link rel="icon" type="image/png" href="https://icons.veryicon.com/png/o/object/color-game-icon/game-controller-6.png">
   
-  <!-- CSS DO TOWNSQUARE -->
-  <link rel="stylesheet" href="/tokens.css">
-  <link rel="stylesheet" href="/widget.css">
-
-  <script>
-      // Apaga qualquer configuração antiga do TownSquare guardada na memória do navegador
-      try {
-          localStorage.removeItem('townsquare-server');
-          localStorage.removeItem('townsquare-room');
-      } catch(e) {}
-  </script>
+  <!-- CSS DO TOWNSQUARE OFICIAL -->
+  <link rel="preconnect" href="https://townsquare.cauenapier.com" crossorigin>
+  <link rel="stylesheet" href="https://townsquare.cauenapier.com/widget.css">
+  <link rel="stylesheet" href="https://townsquare.cauenapier.com/api/sites/site_GFXpmnAByNCsU_0W/style.css">
 
   <!-- Bibliotecas -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -42,10 +35,10 @@
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #64748b; }
     
-    #townsquare-target {
+    #townsquare-root {
+        max-width: 460px;
+        margin-inline: auto;
         position: relative;
-        width: 100%;
-        min-height: 250px;
         z-index: 40;
     }
   </style>
@@ -2187,40 +2180,16 @@
   </script>
 
   <!-- ========================================================================= -->
-  <!-- 3. INJEÇÃO DO TOWNSQUARE (Roteamento delegado ao Servidor)                -->
+  <!-- 3. TOWNSQUARE OFICIAL (https://townsquare.cauenapier.com)                 -->
   <!-- ========================================================================= -->
-  
-  <div id="townsquare-target"></div>
+  <div id="townsquare-root" style="max-width:460px;margin-inline:auto"></div>
+  <script type="module" async>
+    import { mountTownSquare } from "https://townsquare.cauenapier.com/townsquare.mjs";
 
-  <script>
-    window.addEventListener('load', function() {
-        setTimeout(function() {
-            var target = document.getElementById('townsquare-target');
-            if (target) {
-                target.style.pointerEvents = 'none';
-
-                // A MÁGICA NATIVA: 
-                // Em local, apontamos o TownSquare para o nosso próprio domínio (localhost:8081).
-                // Desta forma o navegador não fará CORS! O Nginx Local irá redirecionar o pedido para o contentor TownSquare.
-                var isLocal = window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('172.');
-                var tsServerUrl = isLocal ? window.location.origin : 'https://api.laricks.com.br';
-
-                // Usamos Function para esconder a palavra "import" do olho agressivo do Babel
-                var loadTS = new Function("rootElem", "serverUrl", 
-                    "return import('/townsquare.mjs').then(function(m) { " +
-                        "m.mountTownSquare(rootElem, { server: serverUrl, room: 'laricks-biblioteca' }); " +
-                        "setTimeout(function() { " +
-                            "Array.from(rootElem.children).forEach(function(child) { " +
-                                "child.style.pointerEvents = 'auto'; " +
-                            "}); " +
-                        "}, 1500); " +
-                    "}).catch(console.error);"
-                );
-
-                loadTS(target, tsServerUrl);
-                console.log('🏰 TownSquare iniciado, roteamento 100% nativo delegado para:', tsServerUrl);
-            }
-        }, 1000);
+    mountTownSquare(document.getElementById("townsquare-root"), {
+      serverOrigin: "https://townsquare.cauenapier.com",
+      siteKey: "site_GFXpmnAByNCsU_0W",
+      theme: "host"
     });
   </script>
 
