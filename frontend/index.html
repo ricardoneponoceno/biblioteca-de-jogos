@@ -1645,9 +1645,41 @@
       );
     }
 
-    // Redimensiona um arquivo de imagem no navegador via Canvas (center-crop
-    // quadrado 256x256) e exporta como Data URL compacta (WebP ou JPEG).
-    function redimensionarAvatarCanvas(file, tamanho = 256) {
+    // Renderiza um HTMLImageElement para Data URL 256x256 WebP/JPEG aplicando
+    // zoom (>= 1) e deslocamentos normalizados offsetX/offsetY em [-1, 1].
+    // Quando zoom=1 e offsetX=0, offsetY=0, realiza o center-crop quadrado exato.
+    function renderizarRecorteAvatar(img, zoom = 1, offsetX = 0, offsetY = 0, tamanho = 256) {
+      const canvas = document.createElement('canvas');
+      canvas.width = tamanho;
+      canvas.height = tamanho;
+      const ctx = canvas.getContext('2d');
+
+      const z = Math.max(1, Math.min(3, Number(zoom) || 1));
+      const ladoBase = Math.min(img.width, img.height);
+      const ladoRecorte = ladoBase / z;
+
+      const maxDeslocX = Math.max(0, (img.width - ladoRecorte) / 2);
+      const maxDeslocY = Math.max(0, (img.height - ladoRecorte) / 2);
+
+      const clamp = (v) => Math.max(-1, Math.min(1, Number(v) || 0));
+      const centroX = img.width / 2 - clamp(offsetX) * maxDeslocX;
+      const centroY = img.height / 2 - clamp(offsetY) * maxDeslocY;
+
+      const sx = Math.max(0, Math.min(img.width - ladoRecorte, centroX - ladoRecorte / 2));
+      const sy = Math.max(0, Math.min(img.height - ladoRecorte, centroY - ladoRecorte / 2));
+
+      ctx.clearRect(0, 0, tamanho, tamanho);
+      ctx.drawImage(img, sx, sy, ladoRecorte, ladoRecorte, 0, 0, tamanho, tamanho);
+
+      let dataUrl = canvas.toDataURL('image/webp', 0.85);
+      if (!dataUrl.startsWith('data:image/webp')) {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      }
+      return dataUrl;
+    }
+
+    // Carrega um File de imagem e devolve { img, rawDataUrl, autoCropDataUrl }.
+    function carregarImagemUpload(file, tamanho = 256) {
       return new Promise((resolve, reject) => {
         if (!file || !file.type || !file.type.startsWith('image/')) {
           reject(new Error('Selecione um arquivo de imagem válido.'));
@@ -1656,37 +1688,25 @@
         const reader = new FileReader();
         reader.onerror = () => reject(new Error('Erro ao ler o arquivo de imagem.'));
         reader.onload = (e) => {
+          const rawDataUrl = e.target.result;
           const img = new Image();
           img.onerror = () => reject(new Error('Não foi possível decodificar a imagem selecionada.'));
           img.onload = () => {
             try {
-              const canvas = document.createElement('canvas');
-              canvas.width = tamanho;
-              canvas.height = tamanho;
-              const ctx = canvas.getContext('2d');
-              const lado = Math.min(img.width, img.height);
-              const sx = Math.floor((img.width - lado) / 2);
-              const sy = Math.floor((img.height - lado) / 2);
-              ctx.clearRect(0, 0, tamanho, tamanho);
-              ctx.drawImage(img, sx, sy, lado, lado, 0, 0, tamanho, tamanho);
-
-              let dataUrl = canvas.toDataURL('image/webp', 0.85);
-              if (!dataUrl.startsWith('data:image/webp')) {
-                dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-              }
-              resolve(dataUrl);
+              const autoCropDataUrl = renderizarRecorteAvatar(img, 1, 0, 0, tamanho);
+              resolve({ img, rawDataUrl, autoCropDataUrl });
             } catch (err) {
               reject(new Error('Erro ao processar a imagem no navegador.'));
             }
           };
-          img.src = e.target.result;
+          img.src = rawDataUrl;
         };
         reader.readAsDataURL(file);
       });
     }
 
-    // Issue #34: Modal para editar imagem de exibição (upload 256x256 ou URL)
-    // e bio do próprio perfil.
+    // Issue #34: Modal para editar imagem de exibição (upload 256x256 com
+    // center-crop automático + editor opcional de recorte/zoom, ou URL) e bio.
     function EditarPerfilModal({ perfil, onSaved, onCancel }) {
       const [avatarUrl, setAvatarUrl] = useState(perfil.avatar_url || '');
       const [urlInput, setUrlInput] = useState(
@@ -1698,14 +1718,67 @@
       const [erro, setErro] = useState('');
       const fileInputRef = useRef(null);
 
+      // Estado da imagem original carregada no upload para permitir recorte interativo opcional
+      const [imagemOriginal, setImagemOriginal] = useState(null);
+      const [recortando, setRecortando] = useState(false);
+      const [cropZoom, setCropZoom] = useState(1);
+      const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+      const cropCanvasRef = useRef(null);
+      const dragRef = useRef(null);
+
+      // Desenha o preview interativo no canvas do editor de recorte com máscara circular
+      useEffect(() => {
+        if (!recortando || !imagemOriginal || !cropCanvasRef.current) return;
+        const canvas = cropCanvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const tam = canvas.width;
+        const img = imagemOriginal;
+
+        const z = Math.max(1, Math.min(3, Number(cropZoom) || 1));
+        const ladoBase = Math.min(img.width, img.height);
+        const ladoRecorte = ladoBase / z;
+
+        const maxDeslocX = Math.max(0, (img.width - ladoRecorte) / 2);
+        const maxDeslocY = Math.max(0, (img.height - ladoRecorte) / 2);
+
+        const centroX = img.width / 2 - cropOffset.x * maxDeslocX;
+        const centroY = img.height / 2 - cropOffset.y * maxDeslocY;
+
+        const sx = Math.max(0, Math.min(img.width - ladoRecorte, centroX - ladoRecorte / 2));
+        const sy = Math.max(0, Math.min(img.height - ladoRecorte, centroY - ladoRecorte / 2));
+
+        ctx.clearRect(0, 0, tam, tam);
+        ctx.drawImage(img, sx, sy, ladoRecorte, ladoRecorte, 0, 0, tam, tam);
+
+        // Máscara escura fora do círculo para guiar o enquadramento do avatar
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.58)';
+        ctx.beginPath();
+        ctx.rect(0, 0, tam, tam);
+        ctx.arc(tam / 2, tam / 2, tam / 2 - 2, 0, Math.PI * 2, true);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tam / 2, tam / 2, tam / 2 - 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }, [recortando, imagemOriginal, cropZoom, cropOffset]);
+
       const handleArquivoChange = async (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
         setErro('');
         setProcessandoImg(true);
         try {
-          const dataUrl = await redimensionarAvatarCanvas(file, 256);
-          setAvatarUrl(dataUrl);
+          const { img, autoCropDataUrl } = await carregarImagemUpload(file, 256);
+          setImagemOriginal(img);
+          setCropZoom(1);
+          setCropOffset({ x: 0, y: 0 });
+          setRecortando(false);
+          // Já aplica o recorte automático quadrado 256x256 imediatamente
+          setAvatarUrl(autoCropDataUrl);
           setUrlInput('');
         } catch (err) {
           setErro(err.message || 'Erro ao processar imagem.');
@@ -1715,15 +1788,67 @@
         }
       };
 
+      const iniciarArrasteCrop = (clientX, clientY) => {
+        dragRef.current = {
+          startX: clientX,
+          startY: clientY,
+          initialOffsetX: cropOffset.x,
+          initialOffsetY: cropOffset.y,
+        };
+      };
+
+      const moverArrasteCrop = (clientX, clientY) => {
+        if (!dragRef.current || !imagemOriginal || !cropCanvasRef.current) return;
+        const tamVisor = cropCanvasRef.current.clientWidth || 224;
+        const z = Math.max(1, Math.min(3, Number(cropZoom) || 1));
+        const ladoBase = Math.min(imagemOriginal.width, imagemOriginal.height);
+        const ladoRecorte = ladoBase / z;
+
+        const maxDeslocX = Math.max(0, (imagemOriginal.width - ladoRecorte) / 2);
+        const maxDeslocY = Math.max(0, (imagemOriginal.height - ladoRecorte) / 2);
+
+        const dxPixelsImg = ((clientX - dragRef.current.startX) / tamVisor) * ladoRecorte;
+        const dyPixelsImg = ((clientY - dragRef.current.startY) / tamVisor) * ladoRecorte;
+
+        const novoX = maxDeslocX > 0
+          ? Math.max(-1, Math.min(1, dragRef.current.initialOffsetX + dxPixelsImg / maxDeslocX))
+          : 0;
+        const novoY = maxDeslocY > 0
+          ? Math.max(-1, Math.min(1, dragRef.current.initialOffsetY + dyPixelsImg / maxDeslocY))
+          : 0;
+
+        setCropOffset({ x: novoX, y: novoY });
+      };
+
+      const encerrarArrasteCrop = () => {
+        dragRef.current = null;
+      };
+
+      const handleCentralizarCrop = () => {
+        setCropZoom(1);
+        setCropOffset({ x: 0, y: 0 });
+      };
+
+      const handleAplicarRecorte = () => {
+        if (!imagemOriginal) return;
+        const dataUrl = renderizarRecorteAvatar(imagemOriginal, cropZoom, cropOffset.x, cropOffset.y, 256);
+        setAvatarUrl(dataUrl);
+        setRecortando(false);
+      };
+
       const handleUrlInputChange = (e) => {
         const val = e.target.value;
         setUrlInput(val);
         setAvatarUrl(val.trim());
+        setImagemOriginal(null);
+        setRecortando(false);
       };
 
       const handleRemoverAvatar = () => {
         setAvatarUrl('');
         setUrlInput('');
+        setImagemOriginal(null);
+        setRecortando(false);
         setErro('');
       };
 
@@ -1732,8 +1857,14 @@
         setErro('');
         setSalvando(true);
         try {
+          // Se o usuário estiver com o editor de recorte aberto e clicar direto em Salvar,
+          // aplica o recorte atual (ou mantém o avatarUrl já calculado).
+          const avatarFinal = (recortando && imagemOriginal)
+            ? renderizarRecorteAvatar(imagemOriginal, cropZoom, cropOffset.x, cropOffset.y, 256)
+            : (avatarUrl ? avatarUrl.trim() : null);
+
           const res = await axios.patch(`${BACKEND_URL}/perfil`, {
-            avatar_url: avatarUrl ? avatarUrl.trim() : null,
+            avatar_url: avatarFinal,
             bio: bio.trim() || null,
           });
           const novoAvatar = res.data.avatar_url || null;
@@ -1777,12 +1908,72 @@
               )}
 
               <div className="flex flex-col items-center gap-3">
-                <AvatarUsuario
-                  username={perfil.username}
-                  avatarUrl={avatarUrl}
-                  sizeClass="w-24 h-24 text-3xl"
-                  borderClass="border-4 border-gray-700 shadow-lg"
-                />
+                {recortando && imagemOriginal ? (
+                  <div className="w-full bg-gray-900/70 border border-gray-700 rounded-xl p-4 flex flex-col items-center gap-3">
+                    <div className="text-xs text-gray-300 font-semibold">Arraste a imagem para enquadrar</div>
+                    <canvas
+                      ref={cropCanvasRef}
+                      width={256}
+                      height={256}
+                      onMouseDown={(e) => iniciarArrasteCrop(e.clientX, e.clientY)}
+                      onMouseMove={(e) => moverArrasteCrop(e.clientX, e.clientY)}
+                      onMouseUp={encerrarArrasteCrop}
+                      onMouseLeave={encerrarArrasteCrop}
+                      onTouchStart={(e) => {
+                        if (e.touches && e.touches[0]) iniciarArrasteCrop(e.touches[0].clientX, e.touches[0].clientY);
+                      }}
+                      onTouchMove={(e) => {
+                        if (e.touches && e.touches[0]) moverArrasteCrop(e.touches[0].clientX, e.touches[0].clientY);
+                      }}
+                      onTouchEnd={encerrarArrasteCrop}
+                      className="w-52 h-52 rounded-lg border border-gray-600 cursor-move touch-none select-none shadow-inner"
+                    />
+                    <div className="w-full flex items-center gap-3 px-2">
+                      <span className="text-xs text-gray-400 font-semibold">Zoom</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="3"
+                        step="0.05"
+                        value={cropZoom}
+                        onChange={(e) => setCropZoom(parseFloat(e.target.value))}
+                        className="flex-grow accent-blue-500 cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-300 w-9 text-right">{Number(cropZoom).toFixed(1)}x</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCentralizarCrop}
+                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-semibold rounded-lg border border-gray-600 transition-colors"
+                      >
+                        Centralizar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRecortando(false)}
+                        className="px-3 py-1.5 bg-transparent hover:bg-gray-800 text-gray-300 text-xs font-semibold rounded-lg border border-gray-600 transition-colors"
+                      >
+                        Cancelar ajuste
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAplicarRecorte}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        Aplicar recorte
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <AvatarUsuario
+                    username={perfil.username}
+                    avatarUrl={avatarUrl}
+                    sizeClass="w-24 h-24 text-3xl"
+                    borderClass="border-4 border-gray-700 shadow-lg"
+                  />
+                )}
+
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <input
                     ref={fileInputRef}
@@ -1799,6 +1990,16 @@
                   >
                     {processandoImg ? 'Processando...' : 'Enviar imagem do dispositivo'}
                   </button>
+                  {imagemOriginal && !recortando && (
+                    <button
+                      type="button"
+                      disabled={processandoImg || salvando}
+                      onClick={() => setRecortando(true)}
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-semibold rounded-lg border border-gray-600 transition-colors"
+                    >
+                      Ajustar / Recortar
+                    </button>
+                  )}
                   {avatarUrl && (
                     <button
                       type="button"
@@ -1810,9 +2011,6 @@
                     </button>
                   )}
                 </div>
-                <p className="text-[11px] text-gray-400 text-center">
-                  Recorte automático quadrado 256×256 ou cole uma URL abaixo.
-                </p>
               </div>
 
               <div className="space-y-1.5">
