@@ -19,6 +19,7 @@ after(async () => {
 
 const get = (path, opts) => authedFetch(app.baseUrl, path, { method: 'GET', ...opts });
 const post = (path, opts) => authedFetch(app.baseUrl, path, { method: 'POST', ...opts });
+const patch = (path, opts) => authedFetch(app.baseUrl, path, { method: 'PATCH', ...opts });
 
 test('GET /usuarios/:username/perfil sem token -> 401', async () => {
   const res = await get('/usuarios/ninguem/perfil');
@@ -234,12 +235,98 @@ test('GET /usuarios/:username/vinculos lista apenas vínculos aceitos com total_
 
   assert.deepEqual(body, {
     amigos: [
-      { username: 'a_amigo13', total_jogos: 2 },
-      { username: 'z_amigo13', total_jogos: 0 },
+      { username: 'a_amigo13', avatar_url: null, total_jogos: 2 },
+      { username: 'z_amigo13', avatar_url: null, total_jogos: 0 },
     ],
     familia: [
-      { username: 'b_familiar13', total_jogos: 1 },
+      { username: 'b_familiar13', avatar_url: null, total_jogos: 1 },
     ],
   });
+});
+
+// --- Issue #34: Imagem de exibição (avatar_url) e edição de bio ---
+
+test('PATCH /perfil sem token -> 401 e GET /perfil/me sem token -> 401', async () => {
+  const resPatch = await patch('/perfil', { body: { bio: 'teste' } });
+  assert.equal(resPatch.status, 401);
+  const resMe = await get('/perfil/me');
+  assert.equal(resMe.status, 401);
+});
+
+test('PATCH /perfil valida payload vazio, URL inválida e bio longa demais', async () => {
+  const eu = await app.criarUsuario('eu14');
+
+  const resVazio = await patch('/perfil', { token: eu.token, body: {} });
+  assert.equal(resVazio.status, 400);
+
+  const resUrlInvalida = await patch('/perfil', {
+    token: eu.token,
+    body: { avatar_url: 'javascript:alert(1)' },
+  });
+  assert.equal(resUrlInvalida.status, 400);
+
+  const resBioLonga = await patch('/perfil', {
+    token: eu.token,
+    body: { bio: 'a'.repeat(301) },
+  });
+  assert.equal(resBioLonga.status, 400);
+});
+
+test('PATCH /perfil atualiza avatar_url (URL e Data URL) e bio, refletindo em /perfil/me, /usuarios/:username/perfil, /vinculos e /vinculos/pendentes', async () => {
+  const eu = await app.criarUsuario('eu15');
+  const outro = await app.criarUsuario('outro15');
+  await app.criarVinculoAceito(eu.id, outro.id, 'amizade');
+
+  const dataUrlValida = 'data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=';
+
+  const resUpdate = await patch('/perfil', {
+    token: eu.token,
+    body: { avatar_url: dataUrlValida, bio: 'Colecionador de RPGs cl\u00e1ssicos' },
+  });
+  assert.equal(resUpdate.status, 200);
+  const atualizado = await resUpdate.json();
+  assert.equal(atualizado.avatar_url, dataUrlValida);
+  assert.equal(atualizado.bio, 'Colecionador de RPGs cl\u00e1ssicos');
+
+  // Reflete em GET /perfil/me
+  const resMe = await get('/perfil/me', { token: eu.token });
+  assert.equal(resMe.status, 200);
+  const meBody = await resMe.json();
+  assert.equal(meBody.avatar_url, dataUrlValida);
+  assert.equal(meBody.bio, 'Colecionador de RPGs cl\u00e1ssicos');
+
+  // Reflete em GET /usuarios/:username/perfil
+  const resPerfil = await get(`/usuarios/${eu.username}/perfil`, { token: outro.token });
+  assert.equal(resPerfil.status, 200);
+  const perfilBody = await resPerfil.json();
+  assert.equal(perfilBody.avatar_url, dataUrlValida);
+  assert.equal(perfilBody.bio, 'Colecionador de RPGs cl\u00e1ssicos');
+
+  // Reflete em GET /usuarios/:username/vinculos
+  const resVinculos = await get(`/usuarios/${outro.username}/vinculos`, { token: outro.token });
+  assert.equal(resVinculos.status, 200);
+  const vinculosBody = await resVinculos.json();
+  assert.equal(vinculosBody.amigos.length, 1);
+  assert.equal(vinculosBody.amigos[0].username, eu.username);
+  assert.equal(vinculosBody.amigos[0].avatar_url, dataUrlValida);
+
+  // Reflete em GET /vinculos/pendentes (solicitante_avatar_url)
+  await post('/vinculos', { token: eu.token, body: { destinatario_id: outro.id, tipo: 'familiar' } });
+  const resPendentes = await get('/vinculos/pendentes', { token: outro.token });
+  assert.equal(resPendentes.status, 200);
+  const pendentesBody = await resPendentes.json();
+  assert.equal(pendentesBody.length, 1);
+  assert.equal(pendentesBody[0].solicitante_username, eu.username);
+  assert.equal(pendentesBody[0].solicitante_avatar_url, dataUrlValida);
+
+  // Permite limpar avatar_url e bio passando null ou string vazia
+  const resLimpar = await patch('/perfil', {
+    token: eu.token,
+    body: { avatar_url: null, bio: '' },
+  });
+  assert.equal(resLimpar.status, 200);
+  const limpo = await resLimpar.json();
+  assert.equal(limpo.avatar_url, null);
+  assert.equal(limpo.bio, null);
 });
 

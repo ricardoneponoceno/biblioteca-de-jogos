@@ -124,6 +124,7 @@
           // Token inválido/expirado numa rota protegida — desloga e recarrega pra limpar todo o estado.
           localStorage.removeItem('gameLibToken');
           localStorage.removeItem('gameLibUsername');
+          localStorage.removeItem('gameLibAvatarUrl');
           window.location.reload();
         }
         return Promise.reject(error);
@@ -596,6 +597,12 @@
           const res = await axios.post(`${BACKEND_URL}/${rota}`, { username, password });
           localStorage.setItem('gameLibToken', res.data.token);
           localStorage.setItem('gameLibUsername', username.trim().toLowerCase());
+          if (res.data.avatar_url) {
+            localStorage.setItem('gameLibAvatarUrl', res.data.avatar_url);
+          } else {
+            localStorage.removeItem('gameLibAvatarUrl');
+          }
+          window.dispatchEvent(new CustomEvent('gameLibAvatarChanged', { detail: { avatarUrl: res.data.avatar_url || null } }));
           onSuccess();
         } catch (err) {
           setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao processar.');
@@ -1228,6 +1235,7 @@
       const handleLogout = () => {
         localStorage.removeItem('gameLibToken');
         localStorage.removeItem('gameLibUsername');
+        localStorage.removeItem('gameLibAvatarUrl');
         setIsAdmin(false);
         setUsuarioUsername(null);
       };
@@ -1597,21 +1605,273 @@
       );
     }
 
-    // Cor determinística a partir do username — placeholder de avatar (Fase 3c
-    // da #3; upload de imagem real fica pra quando existir storage de arquivo,
-    // ver "Em aberto" na wiki).
+    // Cor determinística a partir do username — fallback quando o usuário não
+    // possui imagem de exibição (avatar_url) ou quando a URL falha ao carregar.
     function corAvatar(username) {
+      const nome = String(username || '?');
       let hash = 0;
-      for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+      for (let i = 0; i < nome.length; i++) hash = nome.charCodeAt(i) + ((hash << 5) - hash);
       return `hsl(${Math.abs(hash) % 360}, 55%, 40%)`;
     }
 
-    // Menu de conta no cabeçalho da index — o próprio avatar da pessoa (bolinha
-    // colorida com a inicial do username) funciona como gatilho, deixando claro
-    // que já está logado. Ao clicar, abre um dropdown pequeno (avatar + username,
-    // link pro próprio perfil, e Sair embaixo). Fecha sozinho ao clicar fora.
+    // Issue #34: Componente reutilizável de imagem de exibição com fallback
+    // automático para a bolinha colorida com a inicial do username.
+    function AvatarUsuario({ username, avatarUrl, sizeClass = 'w-10 h-10 text-sm', borderClass = 'border-2 border-gray-600', className = '' }) {
+      const [erroImagem, setErroImagem] = useState(false);
+
+      useEffect(() => {
+        setErroImagem(false);
+      }, [avatarUrl]);
+
+      const inicial = (username || '?').charAt(0).toUpperCase();
+      const mostrarImagem = Boolean(avatarUrl && !erroImagem);
+
+      return (
+        <div
+          className={`rounded-full overflow-hidden flex items-center justify-center text-white font-bold flex-shrink-0 select-none ${sizeClass} ${borderClass} ${className}`}
+          style={mostrarImagem ? { backgroundColor: '#1e293b' } : { backgroundColor: corAvatar(username) }}
+        >
+          {mostrarImagem ? (
+            <img
+              src={avatarUrl}
+              alt={`Avatar de ${username}`}
+              className="w-full h-full object-cover"
+              onError={() => setErroImagem(true)}
+            />
+          ) : (
+            <span>{inicial}</span>
+          )}
+        </div>
+      );
+    }
+
+    // Redimensiona um arquivo de imagem no navegador via Canvas (center-crop
+    // quadrado 256x256) e exporta como Data URL compacta (WebP ou JPEG).
+    function redimensionarAvatarCanvas(file, tamanho = 256) {
+      return new Promise((resolve, reject) => {
+        if (!file || !file.type || !file.type.startsWith('image/')) {
+          reject(new Error('Selecione um arquivo de imagem válido.'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Erro ao ler o arquivo de imagem.'));
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('Não foi possível decodificar a imagem selecionada.'));
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = tamanho;
+              canvas.height = tamanho;
+              const ctx = canvas.getContext('2d');
+              const lado = Math.min(img.width, img.height);
+              const sx = Math.floor((img.width - lado) / 2);
+              const sy = Math.floor((img.height - lado) / 2);
+              ctx.clearRect(0, 0, tamanho, tamanho);
+              ctx.drawImage(img, sx, sy, lado, lado, 0, 0, tamanho, tamanho);
+
+              let dataUrl = canvas.toDataURL('image/webp', 0.85);
+              if (!dataUrl.startsWith('data:image/webp')) {
+                dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              }
+              resolve(dataUrl);
+            } catch (err) {
+              reject(new Error('Erro ao processar a imagem no navegador.'));
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Issue #34: Modal para editar imagem de exibição (upload 256x256 ou URL)
+    // e bio do próprio perfil.
+    function EditarPerfilModal({ perfil, onSaved, onCancel }) {
+      const [avatarUrl, setAvatarUrl] = useState(perfil.avatar_url || '');
+      const [urlInput, setUrlInput] = useState(
+        perfil.avatar_url && !perfil.avatar_url.startsWith('data:') ? perfil.avatar_url : ''
+      );
+      const [bio, setBio] = useState(perfil.bio || '');
+      const [processandoImg, setProcessandoImg] = useState(false);
+      const [salvando, setSalvando] = useState(false);
+      const [erro, setErro] = useState('');
+      const fileInputRef = useRef(null);
+
+      const handleArquivoChange = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        setErro('');
+        setProcessandoImg(true);
+        try {
+          const dataUrl = await redimensionarAvatarCanvas(file, 256);
+          setAvatarUrl(dataUrl);
+          setUrlInput('');
+        } catch (err) {
+          setErro(err.message || 'Erro ao processar imagem.');
+        } finally {
+          setProcessandoImg(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+
+      const handleUrlInputChange = (e) => {
+        const val = e.target.value;
+        setUrlInput(val);
+        setAvatarUrl(val.trim());
+      };
+
+      const handleRemoverAvatar = () => {
+        setAvatarUrl('');
+        setUrlInput('');
+        setErro('');
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setErro('');
+        setSalvando(true);
+        try {
+          const res = await axios.patch(`${BACKEND_URL}/perfil`, {
+            avatar_url: avatarUrl ? avatarUrl.trim() : null,
+            bio: bio.trim() || null,
+          });
+          const novoAvatar = res.data.avatar_url || null;
+          if (novoAvatar) {
+            localStorage.setItem('gameLibAvatarUrl', novoAvatar);
+          } else {
+            localStorage.removeItem('gameLibAvatarUrl');
+          }
+          window.dispatchEvent(new CustomEvent('gameLibAvatarChanged', { detail: { avatarUrl: novoAvatar } }));
+          onSaved(res.data);
+        } catch (err) {
+          setErro((err.response && err.response.data && err.response.data.error) || 'Erro ao salvar perfil.');
+        } finally {
+          setSalvando(false);
+        }
+      };
+
+      return (
+        <div className="modal-backdrop p-4" onClick={onCancel}>
+          <div
+            className="bg-gray-800 text-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-700 flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <h2 className="text-lg font-bold text-white">Editar Perfil</h2>
+              <button
+                type="button"
+                onClick={onCancel}
+                aria-label="Fechar"
+                className="text-gray-400 hover:text-white text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} id="editar-perfil-form" className="p-6 overflow-y-auto space-y-5 flex-grow">
+              {erro && (
+                <div className="px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-300 text-sm">
+                  {erro}
+                </div>
+              )}
+
+              <div className="flex flex-col items-center gap-3">
+                <AvatarUsuario
+                  username={perfil.username}
+                  avatarUrl={avatarUrl}
+                  sizeClass="w-24 h-24 text-3xl"
+                  borderClass="border-4 border-gray-700 shadow-lg"
+                />
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    onChange={handleArquivoChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={processandoImg || salvando}
+                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                  >
+                    {processandoImg ? 'Processando...' : 'Enviar imagem do dispositivo'}
+                  </button>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      disabled={processandoImg || salvando}
+                      onClick={handleRemoverAvatar}
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-red-900/40 text-red-300 hover:text-red-200 text-xs font-semibold rounded-lg border border-gray-600 transition-colors"
+                    >
+                      Remover foto
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 text-center">
+                  Recorte automático quadrado 256×256 ou cole uma URL abaixo.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-gray-300">Ou URL da imagem</label>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={handleUrlInputChange}
+                  placeholder="https://exemplo.com/meu-avatar.png"
+                  className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none text-sm"
+                />
+                {avatarUrl && avatarUrl.startsWith('data:') && (
+                  <p className="text-xs text-emerald-400">✓ Imagem carregada do dispositivo pronta para salvar.</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-semibold text-gray-300">Bio</label>
+                  <span className="text-xs text-gray-400">{bio.length}/300</span>
+                </div>
+                <textarea
+                  rows={3}
+                  maxLength={300}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Conte um pouco sobre seus jogos ou plataformas favoritas..."
+                  className="w-full p-2.5 bg-gray-900/50 rounded-lg border border-gray-600 focus:border-blue-500 outline-none text-sm resize-y"
+                />
+              </div>
+            </form>
+
+            <div className="bg-gray-900 p-4 flex justify-end gap-3 border-t border-gray-700">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-5 py-2 bg-transparent hover:bg-gray-800 text-gray-300 font-semibold rounded-lg border border-gray-600 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="editar-perfil-form"
+                disabled={salvando || processandoImg}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-lg shadow-lg text-sm"
+              >
+                {salvando ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Menu de conta no cabeçalho da index e do perfil — exibe a imagem de
+    // exibição (ou inicial colorida) sincronizada com GET /perfil/me.
     function MenuUsuario({ username, onLogout }) {
       const [aberto, setAberto] = useState(false);
+      const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('gameLibAvatarUrl') || null);
       const menuRef = useRef(null);
 
       useEffect(() => {
@@ -1622,15 +1882,42 @@
         return () => document.removeEventListener('mousedown', fecharSeClicouFora);
       }, []);
 
+      useEffect(() => {
+        const handleAvatarChanged = (e) => {
+          setAvatarUrl((e.detail && e.detail.avatarUrl) || null);
+        };
+        window.addEventListener('gameLibAvatarChanged', handleAvatarChanged);
+        return () => window.removeEventListener('gameLibAvatarChanged', handleAvatarChanged);
+      }, []);
+
+      useEffect(() => {
+        if (!username) return;
+        let cancelado = false;
+        axios.get(`${BACKEND_URL}/perfil/me`)
+          .then((res) => {
+            if (cancelado) return;
+            const url = (res.data && res.data.avatar_url) || null;
+            setAvatarUrl(url);
+            if (url) localStorage.setItem('gameLibAvatarUrl', url);
+            else localStorage.removeItem('gameLibAvatarUrl');
+          })
+          .catch(() => {});
+        return () => { cancelado = true; };
+      }, [username]);
+
       return (
         <div className="relative flex-shrink-0" ref={menuRef}>
           <button
             onClick={() => setAberto((a) => !a)}
             aria-label="Menu da conta"
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold border-2 border-gray-600 hover:border-gray-400 transition-colors"
-            style={{ backgroundColor: corAvatar(username) }}
+            className="rounded-full focus:outline-none group"
           >
-            {username.charAt(0).toUpperCase()}
+            <AvatarUsuario
+              username={username}
+              avatarUrl={avatarUrl}
+              sizeClass="w-10 h-10 text-sm"
+              borderClass="border-2 border-gray-600 group-hover:border-gray-400 transition-colors"
+            />
           </button>
           {aberto && (
             <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-4 flex flex-col items-center gap-2 z-50">
@@ -1638,12 +1925,12 @@
                 href={`/u/${encodeURIComponent(username)}`}
                 className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-gray-600"
-                  style={{ backgroundColor: corAvatar(username) }}
-                >
-                  {username.charAt(0).toUpperCase()}
-                </div>
+                <AvatarUsuario
+                  username={username}
+                  avatarUrl={avatarUrl}
+                  sizeClass="w-14 h-14 text-xl"
+                  borderClass="border-2 border-gray-600"
+                />
                 <span className="text-white font-semibold text-sm">{username}</span>
               </a>
               <button onClick={onLogout} className="text-sm text-gray-400 hover:text-gray-200 underline mt-2">Sair</button>
@@ -1818,10 +2105,20 @@
           <h2 className="text-lg font-bold text-white">Solicitações pendentes</h2>
           {pendentes.map((p) => (
             <div key={p.id} className="bg-yellow-900/60 border border-yellow-600 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-yellow-50 text-sm">
-                <span className="font-semibold">{p.solicitante_username}</span>{' '}
-                {p.tipo === 'amizade' ? 'quer ser seu amigo.' : 'quer criar um vínculo familiar com você.'}
-              </p>
+              <div className="flex items-center gap-3 min-w-0">
+                <a href={`/u/${encodeURIComponent(p.solicitante_username)}`} className="flex-shrink-0 hover:opacity-85 transition-opacity">
+                  <AvatarUsuario
+                    username={p.solicitante_username}
+                    avatarUrl={p.solicitante_avatar_url}
+                    sizeClass="w-10 h-10 text-sm"
+                    borderClass="border border-yellow-500/60"
+                  />
+                </a>
+                <p className="text-yellow-50 text-sm">
+                  <a href={`/u/${encodeURIComponent(p.solicitante_username)}`} className="font-semibold hover:underline">{p.solicitante_username}</a>{' '}
+                  {p.tipo === 'amizade' ? 'quer ser seu amigo.' : 'quer criar um vínculo familiar com você.'}
+                </p>
+              </div>
               <div className="flex gap-2 flex-shrink-0">
                 <button disabled={processando === p.id} onClick={() => resolver(p.id, 'aceito')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-semibold text-white">Aceitar</button>
                 <button disabled={processando === p.id} onClick={() => resolver(p.id, 'recusado')} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-semibold text-white">Recusar</button>
@@ -1923,12 +2220,12 @@
                     className="flex items-center justify-between p-3 rounded-lg bg-gray-900/70 hover:bg-gray-700 border border-gray-700 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 border border-gray-600"
-                        style={{ backgroundColor: corAvatar(item.username) }}
-                      >
-                        {item.username.charAt(0).toUpperCase()}
-                      </div>
+                      <AvatarUsuario
+                        username={item.username}
+                        avatarUrl={item.avatar_url}
+                        sizeClass="w-10 h-10 text-sm"
+                        borderClass="border border-gray-600"
+                      />
                       <span className="font-semibold text-white text-sm truncate">{item.username}</span>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 ml-3">
@@ -1967,6 +2264,7 @@
       const [error, setError] = useState(null);
       const [emComum, setEmComum] = useState(false);
       const [abaVinculosModal, setAbaVinculosModal] = useState(null);
+      const [isEditarPerfilOpen, setIsEditarPerfilOpen] = useState(false);
       const [filters, setFilters] = useState({ titulo: '', plataforma: '', genero: '', status_log: '', gameplay_min: '', gameplay_max: '', metacritic_min: '', metacritic_max: '' });
 
       const meuId = React.useMemo(() => {
@@ -1981,6 +2279,7 @@
       const handleLogoutPerfil = () => {
         localStorage.removeItem('gameLibToken');
         localStorage.removeItem('gameLibUsername');
+        localStorage.removeItem('gameLibAvatarUrl');
         window.location.href = '/';
       };
 
@@ -2066,15 +2365,46 @@
 
           {/* Cabeçalho estilo Instagram: avatar à esquerda, identidade + ações à direita. */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 my-8">
-            <div
-              className="w-24 h-24 sm:w-32 sm:h-32 rounded-full flex items-center justify-center text-white text-4xl font-bold flex-shrink-0 border-4 border-gray-700"
-              style={{ backgroundColor: corAvatar(perfil.username) }}
-            >
-              {perfil.username.charAt(0).toUpperCase()}
+            <div className="relative group flex-shrink-0">
+              <AvatarUsuario
+                username={perfil.username}
+                avatarUrl={perfil.avatar_url}
+                sizeClass="w-24 h-24 sm:w-32 sm:h-32 text-4xl"
+                borderClass="border-4 border-gray-700"
+                className={ehMeuProprioPerfil ? 'cursor-pointer' : ''}
+              />
+              {ehMeuProprioPerfil && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditarPerfilOpen(true)}
+                  title="Alterar imagem de exibição e bio"
+                  className="absolute inset-0 rounded-full bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs font-semibold"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span>Alterar</span>
+                </button>
+              )}
             </div>
             <div className="text-center sm:text-left flex-grow">
-              <h1 className="text-3xl font-bold text-white">{perfil.username}</h1>
-              {perfil.bio && <p className="text-gray-400 mt-1">{perfil.bio}</p>}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <h1 className="text-3xl font-bold text-white">{perfil.username}</h1>
+                {ehMeuProprioPerfil && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditarPerfilOpen(true)}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-semibold rounded-lg border border-gray-600 transition-colors flex items-center gap-1.5"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                    <span>Editar perfil</span>
+                  </button>
+                )}
+              </div>
+              {perfil.bio && <p className="text-gray-400 mt-1.5 max-w-xl whitespace-pre-line">{perfil.bio}</p>}
               <div className="flex gap-4 justify-center sm:justify-start mt-3">
                 <span className="text-gray-300 text-sm"><span className="font-bold text-white">{perfil.contadores.jogos}</span> jogos</span>
                 <button
@@ -2153,6 +2483,16 @@
               abaInicial={abaVinculosModal}
               contadores={perfil.contadores}
               onClose={() => setAbaVinculosModal(null)}
+            />
+          )}
+          {isEditarPerfilOpen && (
+            <EditarPerfilModal
+              perfil={perfil}
+              onSaved={(dadosAtualizados) => {
+                setPerfil((prev) => prev ? { ...prev, avatar_url: dadosAtualizados.avatar_url, bio: dadosAtualizados.bio } : prev);
+                setIsEditarPerfilOpen(false);
+              }}
+              onCancel={() => setIsEditarPerfilOpen(false)}
             />
           )}
         </div>

@@ -39,7 +39,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '512kb' }));
 
 // --- ROTAS ---
 
@@ -122,11 +122,11 @@ app.post('/registro', async (req, res) => {
   try {
     const password_hash = await bcrypt.hash(password, 10);
     const result = await db.query(
-      'INSERT INTO usuarios(username, password_hash) VALUES ($1, $2) RETURNING id, username, is_admin',
+      'INSERT INTO usuarios(username, password_hash) VALUES ($1, $2) RETURNING id, username, is_admin, avatar_url, bio',
       [username.trim().toLowerCase(), password_hash]
     );
     const usuario = result.rows[0];
-    res.status(201).json({ token: assinarToken(usuario) });
+    res.status(201).json({ token: assinarToken(usuario), avatar_url: usuario.avatar_url || null, bio: usuario.bio || null });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Esse username já está cadastrado.' });
@@ -142,7 +142,7 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Username e senha são obrigatórios.' });
   }
   try {
-    const result = await db.query('SELECT id, username, password_hash, is_admin FROM usuarios WHERE username = $1', [username.trim().toLowerCase()]);
+    const result = await db.query('SELECT id, username, password_hash, is_admin, avatar_url, bio FROM usuarios WHERE username = $1', [username.trim().toLowerCase()]);
     const usuario = result.rows[0];
     // Roda bcrypt.compare() sempre, mesmo sem usuário (contra o DUMMY_HASH) — o tempo de
     // resposta fica igual nos dois casos, sem vazar quais usernames estão cadastrados.
@@ -151,7 +151,7 @@ app.post('/login', async (req, res) => {
     if (!usuario || !senhaValida) {
       return res.status(401).json({ error: 'Username ou senha inválidos.' });
     }
-    res.status(200).json({ token: assinarToken(usuario) });
+    res.status(200).json({ token: assinarToken(usuario), avatar_url: usuario.avatar_url || null, bio: usuario.bio || null });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
     res.status(500).json({ error: 'Erro ao fazer login.' });
@@ -815,7 +815,7 @@ app.delete('/vinculos/:id', autenticar, async (req, res) => {
 app.get('/vinculos/pendentes', autenticar, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT v.*, u.username AS solicitante_username
+      `SELECT v.*, u.username AS solicitante_username, u.avatar_url AS solicitante_avatar_url
        FROM vinculos v
        JOIN usuarios u ON u.id = v.solicitante_id
        WHERE v.destinatario_id = $1 AND v.status = 'pendente'
@@ -849,18 +849,118 @@ app.get('/contas-plataforma', autenticar, async (req, res) => {
   }
 });
 
-// --- Perfil do usuário — Fase 3b-ii da #3 ---
-// GET /usuarios/:username/perfil: cabeçalho (username, bio, contadores).
+// --- Perfil do usuário — Fase 3b-ii da #3 e Issue #34 (avatar_url + bio) ---
+// GET /perfil/me: dados básicos do próprio usuário logado (username, bio, avatar_url).
+// PATCH /perfil: atualiza avatar_url e/ou bio do próprio usuário logado.
+// GET /usuarios/:username/perfil: cabeçalho (username, bio, avatar_url, contadores).
 // GET /usuarios/:username/biblioteca: biblioteca EFETIVA da pessoa (posses
 // próprias + as que entram por vínculo familiar aceito), sem revelar de qual
 // conta cada jogo veio — só a plataforma (ver "Testes" na wiki: não-vazamento
 // de origem é o ponto que mais importa aqui). ?em_comum=true recorta pra
 // interseção com a minha biblioteca efetiva, exigindo amizade aceita.
 
+const AVATAR_DATA_URL_REGEX = /^data:image\/(?:webp|jpeg|jpg|png|gif);base64,[A-Za-z0-9+/=]+$/;
+const AVATAR_HTTP_URL_REGEX = /^https?:\/\/[^\s"'<>]+$/i;
+const MAX_AVATAR_URL_LENGTH = 150 * 1024; // 150 KB (suficiente para 256x256 WebP/JPEG/PNG base64)
+const MAX_BIO_LENGTH = 300;
+
+function validarAvatarUrl(valor) {
+  if (valor === null || valor === '') return { ok: true, valor: null };
+  if (typeof valor !== 'string') {
+    return { ok: false, error: 'avatar_url deve ser uma string ou null.' };
+  }
+  const limpo = valor.trim();
+  if (!limpo) return { ok: true, valor: null };
+  if (limpo.length > MAX_AVATAR_URL_LENGTH) {
+    return { ok: false, error: 'A imagem excede o tamanho máximo permitido (150 KB).' };
+  }
+  if (!AVATAR_HTTP_URL_REGEX.test(limpo) && !AVATAR_DATA_URL_REGEX.test(limpo)) {
+    return { ok: false, error: 'avatar_url deve ser uma URL http(s) válida ou imagem codificada em Data URL (webp, jpeg, png, gif).' };
+  }
+  return { ok: true, valor: limpo };
+}
+
+function validarBio(valor) {
+  if (valor === null || valor === '') return { ok: true, valor: null };
+  if (typeof valor !== 'string') {
+    return { ok: false, error: 'bio deve ser uma string ou null.' };
+  }
+  const limpo = valor.trim();
+  if (!limpo) return { ok: true, valor: null };
+  if (limpo.length > MAX_BIO_LENGTH) {
+    return { ok: false, error: `A bio deve ter no máximo ${MAX_BIO_LENGTH} caracteres.` };
+  }
+  return { ok: true, valor: limpo };
+}
+
+app.get('/perfil/me', autenticar, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT id, username, bio, avatar_url FROM usuarios WHERE id = $1',
+      [req.usuario.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao buscar perfil próprio:', err);
+    res.status(500).json({ error: 'Erro ao buscar dados do perfil.' });
+  }
+});
+
+app.patch('/perfil', autenticar, async (req, res) => {
+  const body = req.body || {};
+  const temAvatar = Object.prototype.hasOwnProperty.call(body, 'avatar_url');
+  const temBio = Object.prototype.hasOwnProperty.call(body, 'bio');
+
+  if (!temAvatar && !temBio) {
+    return res.status(400).json({ error: 'Informe avatar_url e/ou bio para atualizar.' });
+  }
+
+  const sets = [];
+  const valores = [];
+  let idx = 1;
+
+  if (temAvatar) {
+    const validacaoAvatar = validarAvatarUrl(body.avatar_url);
+    if (!validacaoAvatar.ok) {
+      return res.status(400).json({ error: validacaoAvatar.error });
+    }
+    sets.push(`avatar_url = $${idx++}`);
+    valores.push(validacaoAvatar.valor);
+  }
+
+  if (temBio) {
+    const validacaoBio = validarBio(body.bio);
+    if (!validacaoBio.ok) {
+      return res.status(400).json({ error: validacaoBio.error });
+    }
+    sets.push(`bio = $${idx++}`);
+    valores.push(validacaoBio.valor);
+  }
+
+  valores.push(req.usuario.id);
+
+  try {
+    const result = await db.query(
+      `UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, username, bio, avatar_url`,
+      valores
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao atualizar perfil:', err);
+    res.status(500).json({ error: 'Erro ao atualizar o perfil.' });
+  }
+});
+
 app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
   const { username } = req.params;
   try {
-    const usuarioResult = await db.query('SELECT id, username, bio FROM usuarios WHERE username = $1', [username]);
+    const usuarioResult = await db.query('SELECT id, username, bio, avatar_url FROM usuarios WHERE username = $1', [username]);
     if (usuarioResult.rows.length === 0) {
       return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
@@ -899,6 +999,7 @@ app.get('/usuarios/:username/perfil', autenticar, async (req, res) => {
       id: dono.id, // precisa vazar (não é sensível) — é o destinatario_id que POST /vinculos exige
       username: dono.username,
       bio: dono.bio,
+      avatar_url: dono.avatar_url || null,
       contadores: { jogos: jogos.rows[0].n, amigos: amigos.rows[0].n, familia: familia.rows[0].n },
       vinculo_amizade: vinculoAmizade.rows[0] || null,
       vinculo_familiar: vinculoFamiliar.rows[0] || null,
@@ -926,6 +1027,7 @@ app.get('/usuarios/:username/vinculos', autenticar, async (req, res) => {
       `SELECT
          v.tipo,
          u.username,
+         u.avatar_url,
          (SELECT count(*)::int FROM posses p WHERE p.usuario_id = u.id) AS total_jogos
        FROM vinculos v
        JOIN usuarios u ON u.id = CASE
@@ -941,7 +1043,7 @@ app.get('/usuarios/:username/vinculos', autenticar, async (req, res) => {
     const amigos = [];
     const familia = [];
     for (const row of result.rows) {
-      const item = { username: row.username, total_jogos: row.total_jogos };
+      const item = { username: row.username, avatar_url: row.avatar_url || null, total_jogos: row.total_jogos };
       if (row.tipo === 'amizade') {
         amigos.push(item);
       } else if (row.tipo === 'familiar') {
